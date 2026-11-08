@@ -31,6 +31,7 @@ email = "kreiling@hey.com"
 dev = [
     "mcp[cli]>=2,<3",
     "pytest>=8.3",
+    "pytest-cov>=6",
     "ruff>=0.9",
 ]
 
@@ -40,3 +41,10 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 mcp-server-docker = "mcp_server_docker:main"
+
+[tool.pytest.ini_options]
+addopts = "-m 'not integration'"
+pythonpath = ["."]
+markers = [
+    "integration: requires a running Docker daemon and Buildx",
+]

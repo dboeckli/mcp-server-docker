@@ -30,7 +30,23 @@ jobs:
       - name: Lint
         run: uv run ruff check src tests
       - name: Test
-        run: uv run pytest
+        run: uv run pytest --cov=mcp_server_docker --cov-report=term-missing --cov-fail-under=90
+
+  integration:
+    name: Integration tests
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen
+      - name: Run integration tests
+        run: uv run pytest -o addopts= -m integration
 
   docker:
     name: Docker image
