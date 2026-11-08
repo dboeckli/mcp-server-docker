@@ -3,14 +3,17 @@
 import json
 import shutil
 import subprocess
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import wraps
 from typing import Annotated, Any, Literal
 
 import docker
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.shared.exceptions import MCPError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
@@ -119,6 +122,30 @@ async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
 
 
 app = MCPServer("docker-server", version=__version__, lifespan=lifespan)
+
+
+class ToolRuntimeError(ToolError, RuntimeError):
+    """A tool failure whose message is safe to surface to the model."""
+
+
+def tool(
+    *args: Any, **kwargs: Any
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Register a tool and surface anticipated failures to the model."""
+
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(fn)
+        def wrapper(*fn_args: Any, **fn_kwargs: Any) -> Any:
+            try:
+                return fn(*fn_args, **fn_kwargs)
+            except (MCPError, ToolError):
+                raise
+            except Exception as exc:
+                raise ToolRuntimeError(str(exc)) from exc
+
+        return app.tool(*args, **kwargs)(wrapper)
+
+    return decorator
 
 
 @app.prompt(
@@ -261,7 +288,7 @@ def container_stats(container_id: str, ctx: Context) -> dict[str, Any]:
     return container.stats(stream=False)
 
 
-@app.tool(
+@tool(
     description="List all Docker containers",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -284,7 +311,7 @@ def list_containers(
     ]
 
 
-@app.tool(
+@tool(
     description="Create a new Docker container",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -341,7 +368,7 @@ def create_container(
     )
 
 
-@app.tool(
+@tool(
     description="Run an image in a new Docker container (preferred over `create_container` + `start_container`)",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -398,7 +425,7 @@ def run_container(
     )
 
 
-@app.tool(
+@tool(
     description="Stop and remove a container, then run a new container. Fails if the container does not exist.",
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
@@ -443,7 +470,7 @@ def recreate_container(
     )
 
 
-@app.tool(
+@tool(
     description="Start a Docker container",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -457,7 +484,7 @@ def start_container(
     return docker_to_dict(container)
 
 
-@app.tool(
+@tool(
     description="Fetch logs for a Docker container",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -480,7 +507,7 @@ def fetch_container_logs(
     }
 
 
-@app.tool(
+@tool(
     description="Stop a Docker container",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -494,7 +521,7 @@ def stop_container(
     return docker_to_dict(container)
 
 
-@app.tool(
+@tool(
     description="Remove a Docker container",
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
@@ -510,7 +537,7 @@ def remove_container(
     return docker_to_dict(container, {"status": "removed"})
 
 
-@app.tool(
+@tool(
     description="List Docker images",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -536,7 +563,7 @@ def list_images(
     ]
 
 
-@app.tool(
+@tool(
     description="Pull a Docker image",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=True
@@ -550,7 +577,7 @@ def pull_image(
     return docker_to_dict(_client(ctx).images.pull(repository, tag=tag))
 
 
-@app.tool(
+@tool(
     description="Push a Docker image",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=True
@@ -565,7 +592,7 @@ def push_image(
     return {"status": "pushed", "repository": repository, "tag": tag}
 
 
-@app.tool(
+@tool(
     description="Build a Docker image from a Dockerfile",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -581,7 +608,7 @@ def build_image(
     return {"image": docker_to_dict(image), "logs": list(logs)}
 
 
-@app.tool(
+@tool(
     description="Remove a Docker image",
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
@@ -596,7 +623,7 @@ def remove_image(
     return {"status": "removed", "image": image}
 
 
-@app.tool(
+@tool(
     description="List Docker Buildx builder instances",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -606,7 +633,7 @@ def buildx_list() -> list[dict[str, Any]]:
     return _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
 
 
-@app.tool(
+@tool(
     description="List Docker Buildx build records",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -623,7 +650,7 @@ def buildx_history(
     return _parse_json_stream(_run_docker(*args))
 
 
-@app.tool(
+@tool(
     description="Show the logs of a Docker Buildx build record",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -647,7 +674,7 @@ def buildx_logs(
     return _run_docker(*args, combine_stderr=True)
 
 
-@app.tool(
+@tool(
     description="List Docker networks",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -667,7 +694,7 @@ def list_networks(
     ]
 
 
-@app.tool(
+@tool(
     description="Create a Docker network",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -689,7 +716,7 @@ def create_network(
     )
 
 
-@app.tool(
+@tool(
     description="Remove a Docker network",
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
@@ -704,7 +731,7 @@ def remove_network(
     return docker_to_dict(network)
 
 
-@app.tool(
+@tool(
     description="List Docker volumes",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -714,7 +741,7 @@ def list_volumes(ctx: Context[AppContext]) -> list[dict[str, Any]]:
     return [docker_to_dict(volume) for volume in _client(ctx).volumes.list()]
 
 
-@app.tool(
+@tool(
     description="Create a Docker volume",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
@@ -731,7 +758,7 @@ def create_volume(
     )
 
 
-@app.tool(
+@tool(
     description="Remove a Docker volume",
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
