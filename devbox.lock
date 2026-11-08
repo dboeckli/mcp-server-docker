@@ -4,7 +4,7 @@
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "resolved": "github:NixOS/nixpkgs/3a05eebede89661660945da1f151959900903b6a?lastModified=1740547748&narHash=sha256-Ly2fBL1LscV%2BKyCqPRufUBuiw%2BzmWrlJzpWOWbahplg%3D"
     },
-    "nodejs@latest": {
+    "nodejs@23.2.0": {
       "last_modified": "2024-11-22T01:27:12Z",
       "plugin_version": "0.0.2",
       "resolved": "github:NixOS/nixpkgs/8edf06bea5bcbee082df1b7369ff973b91618b8d#nodejs_23",
@@ -69,7 +69,7 @@
         }
       }
     },
-    "taplo@latest": {
+    "taplo@0.9.3": {
       "last_modified": "2024-11-16T04:25:12Z",
       "resolved": "github:NixOS/nixpkgs/34a626458d686f1b58139620a8b2793e9e123bba#taplo",
       "source": "devbox-search",
@@ -117,7 +117,7 @@
         }
       }
     },
-    "uv@latest": {
+    "uv@0.4.30": {
       "last_modified": "2024-11-28T07:51:56Z",
       "resolved": "github:NixOS/nixpkgs/226216574ada4c3ecefcbbec41f39ce4655f78ef#uv",
       "source": "devbox-search",
