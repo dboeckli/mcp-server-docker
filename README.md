@@ -243,6 +243,12 @@ uv run ruff format --check src tests
 uv run ruff check src tests
 ```
 
+Run the Docker integration tests (requires Docker and Buildx):
+
+```bash
+uv run pytest -o addopts= -m integration
+```
+
 See the `devbox.json` for helpful development commands.
 
 After setting up devbox you can configure your Claude MCP config to use it:
