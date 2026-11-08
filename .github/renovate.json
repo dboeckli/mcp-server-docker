@@ -18,6 +18,12 @@
       "dependencyDashboardApproval": true
     },
     {
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": ">=3.12.0 <3.13.0"
+    },
+    {
       "matchManagers": [
         "pep621"
       ],
@@ -34,6 +40,17 @@
         "devbox"
       ],
       "groupName": "devbox packages"
+    },
+    {
+      "matchManagers": [
+        "devbox"
+      ],
+      "matchPackageNames": [
+        "nodejs"
+      ],
+      "allowedVersions": ">=26.0.0 <27.0.0",
+      "dependencyDashboardApproval": false,
+      "groupName": "Node.js"
     }
   ]
 }
