@@ -14,7 +14,7 @@ An MCP server for managing Docker with natural language!
   public-facing website.
 - Tinkerers: run containers locally and experiment with open-source apps
   supporting Docker.
-- AI enthusiasts: push the limits of that an LLM is capable of!
+- AI enthusiasts: push the limits of what an LLM is capable of!
 
 ## Demo
 
@@ -33,7 +33,10 @@ On MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
 On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
 <details>
-  <summary>Install from PyPi with uv</summary>
+  <summary>Install from GitHub with uv</summary>
+
+This fork is not published to PyPI. Install it directly from the tagged GitHub
+source (`v0.4.3`).
 
 If you don't have `uv` installed, follow the installation instructions for your
 system:
@@ -46,6 +49,8 @@ Then add the following to your MCP servers file:
   "mcp-server-docker": {
     "command": "uvx",
     "args": [
+      "--from",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.4.3",
       "mcp-server-docker"
     ]
   }
@@ -57,12 +62,19 @@ Then add the following to your MCP servers file:
 <details>
   <summary>Install with Docker</summary>
 
-Purely for convenience, the server can run in a Docker container.
-
-After cloning this repository, build the Docker image:
+Purely for convenience, the server can run in a Docker container. A prebuilt
+image is published to GHCR:
 
 ```bash
-docker build -t mcp-server-docker .
+docker run -i --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/dboeckli/mcp-server-docker:0.4.3
+```
+
+Alternatively, build the image locally:
+
+```bash
+docker build -t mcp-server-docker:0.4.3 .
 ```
 
 And then add the following to your MCP servers file:
@@ -77,14 +89,16 @@ And then add the following to your MCP servers file:
       "--rm",
       "-v",
       "/var/run/docker.sock:/var/run/docker.sock",
-      "mcp-server-docker:latest"
+      "ghcr.io/dboeckli/mcp-server-docker:0.4.3"
     ]
   }
 }
 ```
 
 Note that we mount the Docker socket as a volume; this ensures the MCP server
-can connect to and control the local Docker daemon.
+can connect to and control the local Docker daemon. The image does not include
+the Docker CLI, so the Buildx tools only work when the server runs where the
+CLI is installed.
 
 </details>
 
@@ -111,14 +125,14 @@ with the LLM will involve the following steps:
 - name: `nginx`, containers: "deploy an nginx container exposing it on port
   9000"
 - name: `wordpress`, containers: "deploy a WordPress container and a supporting
-  MySQL container, exposing Wordpress on port 9000"
+  MySQL container, exposing WordPress on port 9000"
 
 #### Resuming a Project
 
 When starting a new chat with this prompt, the LLM will receive the status of
 any containers, volumes, and networks created with the given project `name`.
 
-This is mainly useful for cleaning up, in-case you lose a chat that was
+This is mainly useful for cleaning up, in case you lose a chat that was
 responsible for many containers.
 
 ## 📔 Resources
@@ -158,9 +172,9 @@ Read either URI with a Docker container ID or name.
 - `buildx_logs`
 
 These tools invoke the `docker` CLI, so the `docker` binary (with the Buildx
-plugin) must be available on `PATH`. The supplied container image does not
-include the Docker CLI, so the Buildx tools are only usable when the server
-runs where the CLI is installed.
+plugin) must be available on `PATH`. The container image built from this
+repository does not include the Docker CLI, so the Buildx tools are only usable
+when the server runs where the CLI is installed.
 
 ### Networks
 
@@ -214,6 +228,8 @@ Simply set a `ssh://` host URL in the MCP server definition:
   "mcp-server-docker": {
     "command": "uvx",
     "args": [
+      "--from",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.4.3",
       "mcp-server-docker"
     ],
     "env": {
@@ -253,14 +269,18 @@ See the `devbox.json` for helpful development commands.
 
 After setting up devbox you can configure your Claude MCP config to use it:
 
-```
-  "docker": {
-    "command": "/path/to/repo/.devbox/nix/profile/default/bin/uv",
-    "args": [
-      "--directory",
-      "/path/to/repo/",
-      "run",
-      "mcp-server-docker"
-    ]
-  },
+```json
+{
+  "mcpServers": {
+    "docker": {
+      "command": "/path/to/repo/.devbox/nix/profile/default/bin/uv",
+      "args": [
+        "--directory",
+        "/path/to/repo/",
+        "run",
+        "mcp-server-docker"
+      ]
+    }
+  }
+}
 ```
