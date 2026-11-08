@@ -6,7 +6,7 @@ readme = "README.md"
 dependencies = [
     "docker>=7.1.0",
     "mcp>=2,<3",
-    "paramiko>=3.5.1,<4.0",
+    "paramiko>=5.1,<5.2",
     "pydantic>=2.12",
 ]
 license = { file = "LICENSE" }
