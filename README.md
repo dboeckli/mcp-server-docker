@@ -21,11 +21,13 @@ An MCP server for managing Docker with natural language!
   supporting Docker.
 - AI enthusiasts: push the limits of what an LLM is capable of!
 
-## Demo
+## 🍴 What this fork adds
 
-A quick demo showing a WordPress deployment using natural language:
-
-https://github.com/user-attachments/assets/65e35e67-bce0-4449-af7e-9f4dd773b4b3
+- Buildx tools: `buildx_list`, `buildx_history`, and `buildx_logs`
+- Clear tool error messages, including Docker and Buildx failures
+- A published container image: `ghcr.io/dboeckli/mcp-server-docker`
+- Docker/Buildx integration tests and coverage in CI
+- Automated dependency updates (Dependabot and Renovate)
 
 ## 🏎️ Quickstart
 
@@ -107,39 +109,6 @@ CLI is installed.
 
 </details>
 
-## 📝 Prompts
-
-### 🎻 `docker_compose`
-
-Use natural language to compose containers. [See above](#demo) for a demo.
-
-Provide a Project Name, and a description of desired containers, and let the LLM
-do the rest.
-
-This prompt instructs the LLM to enter a `plan+apply` loop. Your interaction
-with the LLM will involve the following steps:
-
-1. You give the LLM instructions for which containers to bring up
-2. The LLM calculates a concise natural language plan and presents it to you
-3. You either:
-   - Apply the plan
-   - Provide the LLM feedback, and the LLM recalculates the plan
-
-#### Examples
-
-- name: `nginx`, containers: "deploy an nginx container exposing it on port
-  9000"
-- name: `wordpress`, containers: "deploy a WordPress container and a supporting
-  MySQL container, exposing WordPress on port 9000"
-
-#### Resuming a Project
-
-When starting a new chat with this prompt, the LLM will receive the status of
-any containers, volumes, and networks created with the given project `name`.
-
-This is mainly useful for cleaning up, in case you lose a chat that was
-responsible for many containers.
-
 ## 📔 Resources
 
 The server exposes resource templates rather than enumerating currently-running containers:
@@ -192,6 +161,17 @@ when the server runs where the CLI is installed.
 - `list_volumes`
 - `create_volume`
 - `remove_volume`
+
+## 📝 Prompts
+
+### 🎻 `docker_compose`
+
+Optional: turns a project name and a container description into a `plan+apply`
+loop for containers, volumes, and networks. Reusing an existing project name
+lets the LLM see the current state, which is useful for cleanup.
+
+This prompt is not required to use the server; the tools work directly without
+it.
 
 ## 🚧 Disclaimers
 
