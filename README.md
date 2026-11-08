@@ -2,6 +2,11 @@
 
 An MCP server for managing Docker with natural language!
 
+> This is the [`dboeckli` fork](https://github.com/dboeckli/mcp-server-docker) of
+> [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
+> Credit for the original server belongs to Christian Kreiling and the upstream
+> contributors. This fork adds the Buildx tools and related maintenance.
+
 ## 🪩 What can it do?
 
 - 🚀 Compose containers with natural language
