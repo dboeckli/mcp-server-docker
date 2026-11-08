@@ -20,6 +20,8 @@ An MCP server for managing Docker with natural language!
 - Tinkerers: run containers locally and experiment with open-source apps
   supporting Docker.
 - AI enthusiasts: push the limits of what an LLM is capable of!
+- Docker sandbox users: expose the host Docker daemon and Buildx to a sandbox
+  through an MCP gateway without mounting the Docker socket.
 
 ## 🍴 What this fork adds
 
@@ -28,6 +30,27 @@ An MCP server for managing Docker with natural language!
 - A published container image: `ghcr.io/dboeckli/mcp-server-docker`
 - Docker/Buildx integration tests and coverage in CI
 - Automated dependency updates (Dependabot and Renovate)
+
+## 🧱 Use case: Docker sandbox
+
+This server was originally designed for direct Docker management from an MCP
+client. It can also serve as the host-side bridge for a **Docker sandbox** (for
+example
+[opencode-sandbox-kit](https://codeberg.org/dboeckli/opencode-sandbox-kit)):
+
+- The sandbox keeps its own isolated Docker daemon; the host Docker socket is
+  **not** mounted into it and port `2375` is not exposed.
+- This server runs on the host and is registered with an MCP gateway (for
+  example the `sbx` MCP gateway).
+- The sandbox reaches the gateway over MCP and only sees the tools the gateway
+  allows.
+- Read-only tools (`list_*`, `fetch_container_logs`, `buildx_*`) can be
+  allow-listed; write tools should stay behind `ask` or be denied.
+- The Buildx tools added by this fork are meant for this setup: inspecting
+  builders, build history and build logs from inside the sandbox.
+
+This is not a sandbox boundary by itself: the host-side server still has access
+to the host Docker daemon. Use the gateway's permission rules and review them.
 
 ## 🏎️ Quickstart
 
