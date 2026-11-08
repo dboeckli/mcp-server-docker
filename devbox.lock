@@ -6,7 +6,7 @@
     },
     "nodejs@latest": {
       "last_modified": "2024-11-22T01:27:12Z",
-      "plugin_version": "0.0.2",
+      "plugin_version": "0.0.5",
       "resolved": "github:NixOS/nixpkgs/8edf06bea5bcbee082df1b7369ff973b91618b8d#nodejs_23",
       "source": "devbox-search",
       "version": "23.2.0",
@@ -69,51 +69,51 @@
         }
       }
     },
-    "taplo@latest": {
-      "last_modified": "2024-11-16T04:25:12Z",
-      "resolved": "github:NixOS/nixpkgs/34a626458d686f1b58139620a8b2793e9e123bba#taplo",
+    "taplo@0.10.0": {
+      "last_modified": "2026-11-06T15:06:19Z",
+      "resolved": "github:NixOS/nixpkgs/4fe25e12eb9f4c744966dd3de5a05246cf098601#taplo",
       "source": "devbox-search",
-      "version": "0.9.3",
+      "version": "0.10.0",
       "systems": {
         "aarch64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/nzb1qgckvmdq9algzjcagb4yvckhdzhn-taplo-0.9.3",
+              "path": "/nix/store/17yxgj7dj7iyd3s07n5f62bdm84khy8i-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/nzb1qgckvmdq9algzjcagb4yvckhdzhn-taplo-0.9.3"
+          "store_path": "/nix/store/17yxgj7dj7iyd3s07n5f62bdm84khy8i-taplo-0.10.0"
         },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/zbmmhr4l3g6ha7wlybcf9i15y33ilfhy-taplo-0.9.3",
+              "path": "/nix/store/dai9sy3ipvicw8ysgqv2mfb21w8b3h64-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/zbmmhr4l3g6ha7wlybcf9i15y33ilfhy-taplo-0.9.3"
+          "store_path": "/nix/store/dai9sy3ipvicw8ysgqv2mfb21w8b3h64-taplo-0.10.0"
         },
         "x86_64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/bh5inhsv74cymlcyddb3a4ylk3g8vz26-taplo-0.9.3",
+              "path": "/nix/store/v9acccjk7yxs9404lf5j0zafl007314q-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/bh5inhsv74cymlcyddb3a4ylk3g8vz26-taplo-0.9.3"
+          "store_path": "/nix/store/v9acccjk7yxs9404lf5j0zafl007314q-taplo-0.10.0"
         },
         "x86_64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/gc4rj634xf8bk5m2s44mf1qp3hiyj93k-taplo-0.9.3",
+              "path": "/nix/store/rdqc563jfd2ypjv7ir83s9cdw263zahf-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/gc4rj634xf8bk5m2s44mf1qp3hiyj93k-taplo-0.9.3"
+          "store_path": "/nix/store/rdqc563jfd2ypjv7ir83s9cdw263zahf-taplo-0.10.0"
         }
       }
     },

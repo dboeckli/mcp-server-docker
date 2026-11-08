@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.6/.schema/devbox.schema.json",
-  "packages": ["nodejs@latest", "uv@latest", "taplo@latest"],
+  "packages": ["nodejs@latest", "uv@latest", "taplo@0.10.0"],
   "shell": {
     "init_hook": ["echo 'Welcome to devbox!' > /dev/null"],
     "scripts": {
