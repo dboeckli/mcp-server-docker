@@ -1,3 +1,4 @@
+import subprocess
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -127,11 +128,23 @@ class FakeProcess:
 
 @pytest.fixture
 def docker_cli(monkeypatch):
-    cli = SimpleNamespace(calls=[], responses=[])
+    cli = SimpleNamespace(calls=[], kwargs=[], responses=[])
 
-    def fake_run(command, **_kwargs):
+    def fake_run(command, **kwargs):
+        if kwargs.get("capture_output") and ("stdout" in kwargs or "stderr" in kwargs):
+            raise ValueError(
+                "stdout and stderr arguments may not be used with capture_output"
+            )
         cli.calls.append(command)
-        return cli.responses.pop(0)
+        cli.kwargs.append(kwargs)
+        process = cli.responses.pop(0)
+        if kwargs.get("stderr") is subprocess.STDOUT:
+            return FakeProcess(
+                stdout=process.stdout + (process.stderr or ""),
+                stderr=None,
+                returncode=process.returncode,
+            )
+        return process
 
     monkeypatch.setattr(server_module.subprocess, "run", fake_run)
     monkeypatch.setattr(server_module.shutil, "which", lambda _name: "/usr/bin/docker")
@@ -232,6 +245,46 @@ async def test_buildx_logs_returns_text_and_passes_options(server, docker_cli):
             "--progress",
             "rawjson",
         ]
+
+
+@pytest.mark.anyio
+async def test_buildx_logs_uses_build_id_from_full_ref(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(FakeProcess(stdout="step 1\n"))
+        result = await client.call_tool(
+            "buildx_logs",
+            {"ref": "sbx-opencode-v3/sbx-opencode-v30/qja8gbqjwyxk5kia5isg62w1p"},
+        )
+        assert result.content[0].text == "step 1\n"
+        assert docker_cli.calls[-1][1:] == [
+            "buildx",
+            "history",
+            "logs",
+            "qja8gbqjwyxk5kia5isg62w1p",
+            "--progress",
+            "plain",
+        ]
+
+
+@pytest.mark.anyio
+async def test_buildx_logs_returns_stderr_output(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(FakeProcess(stdout="", stderr="step 1\nstep 2\n"))
+        result = await client.call_tool("buildx_logs", {"ref": "abc"})
+        assert result.content[0].text == "step 1\nstep 2\n"
+        assert docker_cli.kwargs[-1]["stdout"] is subprocess.PIPE
+        assert docker_cli.kwargs[-1]["stderr"] is subprocess.STDOUT
+
+
+@pytest.mark.anyio
+async def test_buildx_logs_reports_unknown_ref(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(stdout="", stderr="no record found\n", returncode=1)
+        )
+        result = await client.call_tool("buildx_logs", {"ref": "unknown"})
+        assert result.is_error
+        assert "no record found" in result.content[0].text
 
 
 @pytest.mark.anyio
