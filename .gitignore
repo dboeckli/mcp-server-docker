@@ -15,3 +15,7 @@ wheels/
 # Test / coverage artifacts
 .coverage
 htmlcov/
+
+# Superpowers planning artifacts
+.superpowers/
+docs/superpowers/
