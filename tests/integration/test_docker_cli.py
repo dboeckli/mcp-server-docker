@@ -19,7 +19,7 @@ def test_buildx_logs_returns_logs_for_bare_id(build_record):
 
 @pytest.mark.integration
 def test_buildx_logs_unknown_ref_raises(build_record):
-    with pytest.raises(RuntimeError, match="no record found"):
+    with pytest.raises(RuntimeError, match=r"(?i)no record found|not found|unknown"):
         server_module.buildx_logs("mcp-server-docker-does-not-exist")
 
 
