@@ -11,3 +11,7 @@ wheels/
 
 # IDEs
 .idea/
+
+# Test / coverage artifacts
+.coverage
+htmlcov/

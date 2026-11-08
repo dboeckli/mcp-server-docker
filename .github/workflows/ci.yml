@@ -30,7 +30,7 @@ jobs:
       - name: Lint
         run: uv run ruff check src tests
       - name: Test
-        run: uv run pytest
+        run: uv run pytest --cov=mcp_server_docker --cov-report=term-missing --cov-fail-under=90
 
   docker:
     name: Docker image

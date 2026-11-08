@@ -238,6 +238,7 @@ Run the hermetic test and lint suite without a Docker daemon:
 
 ```bash
 uv run pytest
+uv run pytest --cov=mcp_server_docker --cov-report=term-missing
 uv run ruff format --check src tests
 uv run ruff check src tests
 ```
