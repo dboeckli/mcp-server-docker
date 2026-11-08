@@ -74,16 +74,21 @@ def _client(ctx: Context[AppContext]) -> docker.DockerClient:
     return ctx.request_context.lifespan_context.docker
 
 
-def _run_docker(*args: str) -> str:
+def _run_docker(*args: str, combine_stderr: bool = False) -> str:
     """Run the docker CLI and return stdout, raising on failure."""
     executable = shutil.which("docker")
     if executable is None:
         raise RuntimeError("docker CLI not found on PATH")
     result = subprocess.run(
-        [executable, *args], capture_output=True, text=True, check=False
+        [executable, *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if combine_stderr else subprocess.PIPE,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or f"docker {' '.join(args)} failed")
+        detail = result.stderr if result.stderr is not None else result.stdout
+        raise RuntimeError(detail.strip() or f"docker {' '.join(args)} failed")
     return result.stdout
 
 
@@ -625,7 +630,7 @@ def buildx_history(
     ),
 )
 def buildx_logs(
-    ref: Annotated[str, Field(description="Build record reference")],
+    ref: Annotated[str, Field(description="Build record reference or build ID")],
     builder: Annotated[
         str | None, Field(description="Builder instance to query")
     ] = None,
@@ -634,11 +639,12 @@ def buildx_logs(
         Field(description="Progress output type"),
     ] = "plain",
 ) -> str:
-    args = ["buildx", "history", "logs", ref]
+    build_id = ref.rsplit("/", 1)[-1]
+    args = ["buildx", "history", "logs", build_id]
     if builder is not None:
         args += ["--builder", builder]
     args += ["--progress", progress]
-    return _run_docker(*args)
+    return _run_docker(*args, combine_stderr=True)
 
 
 @app.tool(
