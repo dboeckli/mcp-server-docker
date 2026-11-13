@@ -288,18 +288,125 @@ async def test_buildx_logs_reports_unknown_ref(server, docker_cli):
 
 
 @pytest.mark.anyio
+async def test_buildx_du_reports_each_builder(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(
+                stdout='[{"Name": "default", "Current": true}, '
+                '{"Name": "sbx", "Current": false}]'
+            )
+        )
+        docker_cli.responses.append(
+            FakeProcess(
+                stdout="Shared:\t\t8.3kB\nPrivate:\t20.48kB\n"
+                "Reclaimable:\t28.78kB\nTotal:\t\t28.78kB\n"
+            )
+        )
+        docker_cli.responses.append(
+            FakeProcess(stdout="Reclaimable:\t1kB\nTotal:\t1kB\n")
+        )
+        result = await client.call_tool("buildx_du", {})
+        assert result.structured_content == {
+            "result": [
+                {
+                    "builder": "default",
+                    "current": True,
+                    "shared": "8.3kB",
+                    "private": "20.48kB",
+                    "reclaimable": "28.78kB",
+                    "total": "28.78kB",
+                },
+                {
+                    "builder": "sbx",
+                    "current": False,
+                    "shared": None,
+                    "private": None,
+                    "reclaimable": "1kB",
+                    "total": "1kB",
+                },
+            ]
+        }
+        assert docker_cli.calls[0][1:] == ["buildx", "ls", "--format", "json"]
+        assert docker_cli.calls[1][1:] == ["buildx", "du", "--builder", "default"]
+        assert docker_cli.calls[2][1:] == ["buildx", "du", "--builder", "sbx"]
+
+
+@pytest.mark.anyio
+async def test_buildx_du_supports_single_builder_and_verbose(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(FakeProcess(stdout="Total:\t5kB\n"))
+        docker_cli.responses.append(FakeProcess(stdout='{"ID": "a", "Size": "5kB"}\n'))
+        result = await client.call_tool(
+            "buildx_du", {"builder": "sbx", "verbose": True}
+        )
+        assert result.structured_content == {
+            "result": [
+                {
+                    "builder": "sbx",
+                    "current": None,
+                    "shared": None,
+                    "private": None,
+                    "reclaimable": None,
+                    "total": "5kB",
+                    "records": [{"ID": "a", "Size": "5kB"}],
+                }
+            ]
+        }
+        assert docker_cli.calls[0][1:] == ["buildx", "du", "--builder", "sbx"]
+        assert docker_cli.calls[1][1:] == [
+            "buildx",
+            "du",
+            "--builder",
+            "sbx",
+            "--format",
+            "json",
+        ]
+
+
+@pytest.mark.anyio
+async def test_buildx_du_keeps_other_builders_when_one_fails(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(stdout='[{"Name": "broken"}, {"Name": "ok"}]')
+        )
+        docker_cli.responses.append(
+            FakeProcess(stdout="", stderr="builder not found\n", returncode=1)
+        )
+        docker_cli.responses.append(FakeProcess(stdout="Total:\t2kB\n"))
+        result = await client.call_tool("buildx_du", {})
+        assert not result.is_error
+        assert result.structured_content == {
+            "result": [
+                {"builder": "broken", "current": None, "error": "builder not found"},
+                {
+                    "builder": "ok",
+                    "current": None,
+                    "shared": None,
+                    "private": None,
+                    "reclaimable": None,
+                    "total": "2kB",
+                },
+            ]
+        }
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 22
+        assert len(tools.tools) == 23
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
         assert buildx_list_tool.annotations.read_only_hint
         assert buildx_list_tool.annotations.idempotent_hint
         assert buildx_list_tool.annotations.open_world_hint is False
+        buildx_du_tool = next(tool for tool in tools.tools if tool.name == "buildx_du")
+        assert buildx_du_tool.annotations.read_only_hint
+        assert buildx_du_tool.annotations.idempotent_hint
+        assert buildx_du_tool.annotations.open_world_hint is False
         create = next(tool for tool in tools.tools if tool.name == "create_container")
         assert create.input_schema["required"] == ["image"]
         assert "ctx" not in create.input_schema["properties"]

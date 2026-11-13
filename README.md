@@ -165,6 +165,7 @@ Read either URI with a Docker container ID or name.
 ### Buildx
 
 - `buildx_list`
+- `buildx_du`
 - `buildx_history`
 - `buildx_logs`
 

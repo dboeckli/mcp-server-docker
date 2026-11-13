@@ -111,6 +111,19 @@ def _parse_json_stream(output: str) -> list[dict[str, Any]]:
     raise RuntimeError("unexpected buildx JSON output")
 
 
+_DU_FIELDS = ("shared", "private", "reclaimable", "total")
+
+
+def _parse_du_summary(output: str) -> dict[str, str | None]:
+    values: dict[str, str | None] = {field: None for field in _DU_FIELDS}
+    for line in output.splitlines():
+        label, separator, value = line.partition(":")
+        key = label.strip().lower()
+        if separator and key in values:
+            values[key] = value.strip()
+    return values
+
+
 @asynccontextmanager
 async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
     """Create and close the Docker client for one server lifetime."""
@@ -631,6 +644,46 @@ def remove_image(
 )
 def buildx_list() -> list[dict[str, Any]]:
     return _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
+
+
+@tool(
+    description="Show Docker Buildx cache usage per builder",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def buildx_du(
+    builder: Annotated[
+        str | None, Field(description="Builder instance to query")
+    ] = None,
+    verbose: Annotated[
+        bool, Field(description="Include individual cache records")
+    ] = False,
+) -> list[dict[str, Any]]:
+    builders = (
+        [{"Name": builder, "Current": None}]
+        if builder is not None
+        else _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
+    )
+    results: list[dict[str, Any]] = []
+    for entry in builders:
+        name = entry.get("Name") or entry.get("name")
+        result: dict[str, Any] = {
+            "builder": name,
+            "current": entry.get("Current", entry.get("current")),
+        }
+        try:
+            result.update(
+                _parse_du_summary(_run_docker("buildx", "du", "--builder", name))
+            )
+            if verbose:
+                result["records"] = _parse_json_stream(
+                    _run_docker("buildx", "du", "--builder", name, "--format", "json")
+                )
+        except RuntimeError as exc:
+            result["error"] = str(exc)
+        results.append(result)
+    return results
 
 
 @tool(
