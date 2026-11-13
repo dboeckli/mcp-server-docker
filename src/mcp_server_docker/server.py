@@ -714,6 +714,23 @@ def buildx_du(
 
 
 @tool(
+    description="Inspect a Docker Buildx builder instance",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def buildx_inspect(
+    builder: Annotated[
+        str | None, Field(description="Builder instance to inspect")
+    ] = None,
+) -> str:
+    args = ["buildx", "inspect"]
+    if builder is not None:
+        args += ["--builder", builder]
+    return _run_docker(*args, combine_stderr=True)
+
+
+@tool(
     description="List Docker Buildx build records",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False

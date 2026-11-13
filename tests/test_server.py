@@ -477,12 +477,35 @@ async def test_image_inspect_redacts_env_and_image_history_returns_layers(
 
 
 @pytest.mark.anyio
+async def test_buildx_inspect_returns_text_and_optional_builder(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(stdout="Name:   default\nDriver: docker\n")
+        )
+        result = await client.call_tool("buildx_inspect", {})
+        assert result.content[0].text == "Name:   default\nDriver: docker\n"
+        assert docker_cli.calls[-1][1:] == ["buildx", "inspect"]
+
+        docker_cli.responses.append(
+            FakeProcess(stdout="Name:   sbx\nDriver: docker-container\n")
+        )
+        result = await client.call_tool("buildx_inspect", {"builder": "sbx"})
+        assert result.content[0].text == "Name:   sbx\nDriver: docker-container\n"
+        assert docker_cli.calls[-1][1:] == [
+            "buildx",
+            "inspect",
+            "--builder",
+            "sbx",
+        ]
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 26
+        assert len(tools.tools) == 27
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -497,6 +520,12 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
+        buildx_inspect_tool = next(
+            tool for tool in tools.tools if tool.name == "buildx_inspect"
+        )
+        assert buildx_inspect_tool.annotations.read_only_hint
+        assert buildx_inspect_tool.annotations.idempotent_hint
+        assert buildx_inspect_tool.annotations.open_world_hint is False
         for name in ("image_inspect", "image_history"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint

@@ -172,6 +172,7 @@ image.
 
 - `buildx_list`
 - `buildx_du`
+- `buildx_inspect`
 - `buildx_history`
 - `buildx_logs`
 
