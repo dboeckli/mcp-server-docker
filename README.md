@@ -161,6 +161,12 @@ Read either URI with a Docker container ID or name.
 - `push_image`
 - `build_image`
 - `remove_image`
+- `image_inspect`
+- `image_history`
+
+`image_inspect` replaces environment values with `<redacted>`. `image_history`
+is not redacted: layer `CreatedBy` commands can contain secrets baked into the
+image.
 
 ### Buildx
 

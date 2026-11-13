@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from mcp_server_docker._version import __version__
 from mcp_server_docker.output_schemas import docker_to_dict
+from mcp_server_docker.redaction import redact_env
 
 
 @dataclass
@@ -634,6 +635,32 @@ def remove_image(
 ) -> dict[str, str]:
     _client(ctx).images.remove(image=image, force=force)
     return {"status": "removed", "image": image}
+
+
+@tool(
+    description="Inspect a Docker image with environment values redacted",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def image_inspect(
+    ctx: Context[AppContext],
+    image: Annotated[str, Field(description="Image ID or name")],
+) -> dict[str, Any]:
+    return redact_env(_client(ctx).images.get(image).attrs)
+
+
+@tool(
+    description="Show the layer history of a Docker image",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def image_history(
+    ctx: Context[AppContext],
+    image: Annotated[str, Field(description="Image ID or name")],
+) -> list[dict[str, Any]]:
+    return _client(ctx).images.get(image).history()
 
 
 @tool(

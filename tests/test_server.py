@@ -446,12 +446,43 @@ async def test_system_df_returns_summary_and_optional_detail(server, docker_cli)
 
 
 @pytest.mark.anyio
+async def test_image_inspect_redacts_env_and_image_history_returns_layers(
+    server, docker_client
+):
+    class Image:
+        attrs: ClassVar = {
+            "Config": {"Env": ["SECRET=abc"]},
+            "ContainerConfig": {"Env": ["TOKEN=x=y"]},
+        }
+
+        def history(self):
+            return [{"Id": "layer-1", "CreatedBy": "COPY hello.txt"}]
+
+    docker_client.images.get = lambda name: (
+        docker_client.calls.append(("images.get", name)),
+        Image(),
+    )[1]
+
+    async with Client(server, raise_exceptions=True) as client:
+        inspect = await client.call_tool("image_inspect", {"image": "alpine"})
+        assert inspect.structured_content == {
+            "Config": {"Env": ["SECRET=<redacted>"]},
+            "ContainerConfig": {"Env": ["TOKEN=<redacted>"]},
+        }
+        history = await client.call_tool("image_history", {"image": "alpine"})
+        assert history.structured_content == {
+            "result": [{"Id": "layer-1", "CreatedBy": "COPY hello.txt"}]
+        }
+        assert docker_client.call("images.get") == "alpine"
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 24
+        assert len(tools.tools) == 26
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -466,6 +497,11 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
+        for name in ("image_inspect", "image_history"):
+            tool = next(tool for tool in tools.tools if tool.name == name)
+            assert tool.annotations.read_only_hint
+            assert tool.annotations.idempotent_hint
+            assert tool.annotations.open_world_hint is False
         create = next(tool for tool in tools.tools if tool.name == "create_container")
         assert create.input_schema["required"] == ["image"]
         assert "ctx" not in create.input_schema["properties"]
