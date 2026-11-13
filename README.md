@@ -153,6 +153,11 @@ Read either URI with a Docker container ID or name.
 - `fetch_container_logs`
 - `stop_container`
 - `remove_container`
+- `container_inspect`
+- `container_processes`
+
+`container_inspect` redacts environment values like `image_inspect`.
+`container_processes` is the equivalent of `docker top`.
 
 ### Images
 

@@ -552,6 +552,32 @@ def remove_container(
 
 
 @tool(
+    description="Inspect a Docker container with environment values redacted",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def container_inspect(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+) -> dict[str, Any]:
+    return redact_env(_client(ctx).containers.get(container_id).attrs)
+
+
+@tool(
+    description="List the processes running in a Docker container",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def container_processes(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+) -> dict[str, Any]:
+    return _client(ctx).containers.get(container_id).top()
+
+
+@tool(
     description="List Docker images",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
