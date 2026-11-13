@@ -391,12 +391,67 @@ async def test_buildx_du_keeps_other_builders_when_one_fails(server, docker_cli)
 
 
 @pytest.mark.anyio
+async def test_system_df_reports_missing_docker_cli(server, monkeypatch):
+    monkeypatch.setattr(server_module.shutil, "which", lambda _name: None)
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("system_df", {})
+    assert result.is_error
+    assert "docker CLI not found" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_system_df_returns_summary_and_optional_detail(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(
+                stdout='{"Type": "Images", "Size": "0B"}\n'
+                '{"Type": "Containers", "Size": "0B"}\n'
+            )
+        )
+        result = await client.call_tool("system_df", {})
+        assert result.structured_content == {
+            "summary": [
+                {"Type": "Images", "Size": "0B"},
+                {"Type": "Containers", "Size": "0B"},
+            ]
+        }
+        assert docker_cli.calls[-1][1:] == ["system", "df", "--format", "json"]
+
+        docker_cli.responses.append(
+            FakeProcess(stdout='{"Type": "Images", "Size": "0B"}\n')
+        )
+        docker_cli.responses.append(
+            FakeProcess(
+                stdout='{"Images": [], "Containers": [], '
+                '"Volumes": [], "BuildCache": []}'
+            )
+        )
+        result = await client.call_tool("system_df", {"verbose": True})
+        assert result.structured_content == {
+            "summary": [{"Type": "Images", "Size": "0B"}],
+            "detail": {
+                "Images": [],
+                "Containers": [],
+                "Volumes": [],
+                "BuildCache": [],
+            },
+        }
+        assert docker_cli.calls[-1][1:] == [
+            "system",
+            "df",
+            "-v",
+            "--format",
+            "json",
+        ]
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 23
+        assert len(tools.tools) == 24
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -407,6 +462,10 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert buildx_du_tool.annotations.read_only_hint
         assert buildx_du_tool.annotations.idempotent_hint
         assert buildx_du_tool.annotations.open_world_hint is False
+        system_df_tool = next(tool for tool in tools.tools if tool.name == "system_df")
+        assert system_df_tool.annotations.read_only_hint
+        assert system_df_tool.annotations.idempotent_hint
+        assert system_df_tool.annotations.open_world_hint is False
         create = next(tool for tool in tools.tools if tool.name == "create_container")
         assert create.input_schema["required"] == ["image"]
         assert "ctx" not in create.input_schema["properties"]

@@ -728,6 +728,26 @@ def buildx_logs(
 
 
 @tool(
+    description="Show Docker disk usage, including reclaimable space",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def system_df(
+    verbose: Annotated[
+        bool, Field(description="Include detailed per-object usage")
+    ] = False,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "summary": _parse_json_stream(_run_docker("system", "df", "--format", "json"))
+    }
+    if verbose:
+        detail = _run_docker("system", "df", "-v", "--format", "json")
+        result["detail"] = json.loads(detail) if detail.strip() else {}
+    return result
+
+
+@tool(
     description="List Docker networks",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False

@@ -174,6 +174,14 @@ plugin) must be available on `PATH`. The container image built from this
 repository does not include the Docker CLI, so the Buildx tools are only usable
 when the server runs where the CLI is installed.
 
+### System
+
+- `system_df`
+
+`system_df` uses the `docker` CLI and reports the same summary as
+`docker system df`, including reclaimable space. Pass `verbose=true` for the
+per-image, per-container, per-volume, and build-cache detail.
+
 ### Networks
 
 - `list_networks`
