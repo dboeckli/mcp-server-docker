@@ -189,6 +189,8 @@ when the server runs where the CLI is installed.
 ### System
 
 - `system_df`
+- `version`
+- `system_info`
 
 `system_df` uses the `docker` CLI and reports the same summary as
 `docker system df`, including reclaimable space. Pass `verbose=true` for the

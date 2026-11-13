@@ -915,3 +915,47 @@ def remove_volume(
     volume = _client(ctx).volumes.get(volume_name)
     volume.remove(force=force)
     return docker_to_dict(volume)
+
+
+_SYSTEM_INFO_KEYS = (
+    "ServerVersion",
+    "OperatingSystem",
+    "OSType",
+    "Architecture",
+    "KernelVersion",
+    "NCPU",
+    "MemTotal",
+    "Containers",
+    "ContainersRunning",
+    "ContainersPaused",
+    "ContainersStopped",
+    "Images",
+    "Driver",
+    "DriverStatus",
+    "Plugins",
+    "LoggingDriver",
+    "CgroupDriver",
+    "CgroupVersion",
+    "DockerRootDir",
+)
+
+
+@tool(
+    description="Show the Docker server version",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def version(ctx: Context[AppContext]) -> dict[str, Any]:
+    return _client(ctx).version()
+
+
+@tool(
+    description="Show curated Docker host and storage-driver diagnostics",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def system_info(ctx: Context[AppContext]) -> dict[str, Any]:
+    info = _client(ctx).info()
+    return {key: info[key] for key in _SYSTEM_INFO_KEYS if key in info}
