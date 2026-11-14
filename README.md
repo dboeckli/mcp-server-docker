@@ -66,7 +66,7 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
   <summary>Install from GitHub with uv</summary>
 
 This fork is not published to PyPI. Install it directly from the tagged GitHub
-source (`v0.4.3`).
+source (`v0.5.0`).
 
 If you don't have `uv` installed, follow the installation instructions for your
 system:
@@ -80,7 +80,7 @@ Then add the following to your MCP servers file:
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.4.3",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.5.0",
       "mcp-server-docker"
     ]
   }
@@ -98,13 +98,13 @@ image is published to GHCR:
 ```bash
 docker run -i --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/dboeckli/mcp-server-docker:0.4.3
+  ghcr.io/dboeckli/mcp-server-docker:0.5.0
 ```
 
 Alternatively, build the image locally:
 
 ```bash
-docker build -t mcp-server-docker:0.4.3 .
+docker build -t mcp-server-docker:0.5.0 .
 ```
 
 And then add the following to your MCP servers file:
@@ -119,7 +119,7 @@ And then add the following to your MCP servers file:
       "--rm",
       "-v",
       "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/dboeckli/mcp-server-docker:0.4.3"
+      "ghcr.io/dboeckli/mcp-server-docker:0.5.0"
     ]
   }
 }
@@ -260,7 +260,7 @@ Simply set a `ssh://` host URL in the MCP server definition:
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.4.3",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.5.0",
       "mcp-server-docker"
     ],
     "env": {
