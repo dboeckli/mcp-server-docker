@@ -1,6 +1,6 @@
 [project]
-name = "mcp-server-docker"
-version = "0.6.0"
+name = "mcp-server-docker-dboeckli"
+dynamic = ["version"]
 description = "A Docker MCP Server"
 readme = "README.md"
 dependencies = [
@@ -20,8 +20,9 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/ckreiling/mcp-server-docker"
-Issues = "https://github.com/ckreiling/mcp-server-docker/issues"
+Repository = "https://github.com/dboeckli/mcp-server-docker"
+Issues = "https://github.com/dboeckli/mcp-server-docker/issues"
+Changelog = "https://github.com/dboeckli/mcp-server-docker/releases"
 
 [[project.authors]]
 name = "Christian Kreiling"
@@ -48,3 +49,9 @@ pythonpath = ["."]
 markers = [
     "integration: requires a running Docker daemon and Buildx",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_server_docker"]
+
+[tool.hatch.version]
+path = "src/mcp_server_docker/_version.py"

@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Never cancel a release half-way: a cancelled publish leaves a version on PyPI
+# that cannot be reused.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen
+      - name: Check formatting
+        run: uv run ruff format --check src tests
+      - name: Lint
+        run: uv run ruff check src tests
+      - name: Test
+        run: uv run pytest --cov=mcp_server_docker --cov-report=term-missing --cov-fail-under=90
+
+  build:
+    name: Build distributions
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Verify the tag matches the package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          code_version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/mcp_server_docker/_version.py)"
+          echo "tag=$tag_version code=$code_version"
+          if [ -z "$code_version" ] || [ "$tag_version" != "$code_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match __version__ '${code_version}' in src/mcp_server_docker/_version.py"
+            exit 1
+          fi
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Verify wheel contents and metadata
+        run: |
+          uv run --no-project python - "$GITHUB_REF_NAME" <<'PY'
+          import glob
+          import sys
+          import zipfile
+          from email.parser import HeaderParser
+
+          expected_version = sys.argv[1].removeprefix("v")
+          wheel = glob.glob("dist/*.whl")[0]
+          archive = zipfile.ZipFile(wheel)
+          names = archive.namelist()
+
+          assert "mcp_server_docker/__init__.py" in names, "package directory missing"
+          entry_points = next(n for n in names if n.endswith("entry_points.txt"))
+          assert "mcp-server-docker" in archive.read(entry_points).decode()
+
+          metadata_path = next(n for n in names if n.endswith("METADATA"))
+          metadata = HeaderParser().parsestr(archive.read(metadata_path).decode())
+          assert metadata["Name"] == "mcp-server-docker-dboeckli", metadata["Name"]
+          assert metadata["Version"] == expected_version, metadata["Version"]
+          print(f"verified {metadata['Name']} {metadata['Version']}")
+          PY
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mcp-server-docker-dboeckli
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  release:
+    name: GitHub release
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create or update the release with the distributions attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME"
+          fi
