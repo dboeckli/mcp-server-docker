@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -907,3 +908,78 @@ async def test_production_stdio_read_only_cli_flag():
     assert len(names) == 18
     assert "remove_container" not in names
     assert "container_stats" in names
+
+
+def _inspectable(calls, kind, identifier, attrs):
+    obj = Object(calls)
+    obj.attrs = attrs
+
+    def get(name):
+        calls.append((f"{kind}.get", name))
+        return obj
+
+    return get
+
+
+@pytest.mark.anyio
+async def test_network_inspect_returns_attributes_with_env_redacted(
+    server, docker_client
+):
+    docker_client.networks.get = _inspectable(
+        docker_client.calls,
+        "networks",
+        "db-net",
+        {
+            "Name": "db-net",
+            "Driver": "bridge",
+            "IPAM": {"Config": [{"Subnet": "172.18.0.0/16"}]},
+            "Config": {"Env": ["SECRET_TOKEN=abc123"]},
+        },
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("network_inspect", {"network_id": "db-net"})
+    assert docker_client.calls[-1] == ("networks.get", "db-net")
+    assert result.structured_content == {
+        "Name": "db-net",
+        "Driver": "bridge",
+        "IPAM": {"Config": [{"Subnet": "172.18.0.0/16"}]},
+        "Config": {"Env": ["SECRET_TOKEN=<redacted>"]},
+    }
+
+
+@pytest.mark.anyio
+async def test_volume_inspect_returns_attributes(server, docker_client):
+    docker_client.volumes.get = _inspectable(
+        docker_client.calls,
+        "volumes",
+        "pgdata",
+        {
+            "Name": "pgdata",
+            "Driver": "local",
+            "Mountpoint": "/var/lib/docker/volumes/pgdata/_data",
+            "Labels": {"mcp-server-docker.project": "db"},
+            "Options": None,
+        },
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("volume_inspect", {"volume_name": "pgdata"})
+    assert docker_client.calls[-1] == ("volumes.get", "pgdata")
+    assert result.structured_content == {
+        "Name": "pgdata",
+        "Driver": "local",
+        "Mountpoint": "/var/lib/docker/volumes/pgdata/_data",
+        "Labels": {"mcp-server-docker.project": "db"},
+        "Options": None,
+    }
+
+
+@pytest.mark.anyio
+async def test_network_inspect_reports_unknown_network(server, docker_client):
+    def fail(_name):
+        raise docker.errors.NotFound("no such network")
+
+    docker_client.networks.get = fail
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("network_inspect", {"network_id": "nope"})
+    assert result.is_error
+    assert "no such network" in result.content[0].text

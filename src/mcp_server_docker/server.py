@@ -908,6 +908,19 @@ def remove_network(
 
 
 @tool(
+    description="Inspect a Docker network with environment values redacted",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def network_inspect(
+    ctx: Context[AppContext],
+    network_id: Annotated[str, Field(description="Network ID or name")],
+) -> dict[str, Any]:
+    return redact_env(_client(ctx).networks.get(network_id).attrs)
+
+
+@tool(
     description="List Docker volumes",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -948,6 +961,19 @@ def remove_volume(
     volume = _client(ctx).volumes.get(volume_name)
     volume.remove(force=force)
     return docker_to_dict(volume)
+
+
+@tool(
+    description="Inspect a Docker volume with environment values redacted",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def volume_inspect(
+    ctx: Context[AppContext],
+    volume_name: Annotated[str, Field(description="Volume name")],
+) -> dict[str, Any]:
+    return redact_env(_client(ctx).volumes.get(volume_name).attrs)
 
 
 _SYSTEM_INFO_KEYS = (
