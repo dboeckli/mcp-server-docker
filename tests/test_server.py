@@ -983,3 +983,141 @@ async def test_network_inspect_reports_unknown_network(server, docker_client):
         result = await client.call_tool("network_inspect", {"network_id": "nope"})
     assert result.is_error
     assert "no such network" in result.content[0].text
+
+
+def _container(calls, attrs, status="running"):
+    obj = Object(calls)
+    obj.id = "abc123"
+    obj.name = "web"
+    obj.status = status
+    obj.attrs = attrs
+    return obj
+
+
+@pytest.mark.anyio
+async def test_container_health_summarises_a_healthy_container(server, docker_client):
+    container = _container(
+        docker_client.calls,
+        {
+            "RestartCount": 1,
+            "Config": {
+                "Image": "nginx:1.27",
+                "Cmd": ["nginx", "-g", "daemon off;"],
+                "Env": ["DB_PASSWORD=hunter2"],
+            },
+            "State": {
+                "Status": "running",
+                "Running": True,
+                "Paused": False,
+                "Restarting": False,
+                "OOMKilled": False,
+                "Dead": False,
+                "Pid": 42,
+                "ExitCode": 0,
+                "Error": "",
+                "StartedAt": "2026-11-14T10:00:00.123456789Z",
+                "FinishedAt": "0001-01-01T00:00:00Z",
+                "Health": {
+                    "Status": "healthy",
+                    "FailingStreak": 0,
+                    "Log": [
+                        {
+                            "Start": "2026-11-14T10:00:10Z",
+                            "End": "2026-11-14T10:00:11Z",
+                            "ExitCode": 0,
+                            "Output": "ok\n",
+                        }
+                    ],
+                },
+            },
+        },
+    )
+    docker_client.containers.get = lambda _cid: container
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_health", {"container_id": "abc123"})
+    payload = result.structured_content
+    assert payload["id"] == "abc123"
+    assert payload["name"] == "web"
+    assert payload["status"] == "running"
+    assert payload["image"] == "nginx:1.27"
+    assert payload["command"] == ["nginx", "-g", "daemon off;"]
+    assert payload["restart_count"] == 1
+    assert payload["exit_code"] == 0
+    assert payload["oom_killed"] is False
+    assert payload["started_at"] == "2026-11-14T10:00:00.123456789Z"
+    assert payload["health"] == {
+        "status": "healthy",
+        "failing_streak": 0,
+        "last_log": {
+            "start": "2026-11-14T10:00:10Z",
+            "end": "2026-11-14T10:00:11Z",
+            "exit_code": 0,
+            "output": "ok\n",
+        },
+    }
+    assert "hunter2" not in json.dumps(payload)
+
+
+@pytest.mark.anyio
+async def test_container_health_reports_unhealthy_with_last_log(server, docker_client):
+    container = _container(
+        docker_client.calls,
+        {
+            "RestartCount": 3,
+            "Config": {"Image": "api:2", "Cmd": ["python", "-m", "api"]},
+            "State": {
+                "Status": "running",
+                "Running": True,
+                "ExitCode": 0,
+                "Health": {
+                    "Status": "unhealthy",
+                    "FailingStreak": 3,
+                    "Log": [
+                        {"ExitCode": 0, "Output": "ok\n"},
+                        {"ExitCode": 1, "Output": "curl: (7) Failed to connect\n"},
+                    ],
+                },
+            },
+        },
+    )
+    docker_client.containers.get = lambda _cid: container
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_health", {"container_id": "abc123"})
+    health = result.structured_content["health"]
+    assert health["status"] == "unhealthy"
+    assert health["failing_streak"] == 3
+    assert health["last_log"]["exit_code"] == 1
+    assert health["last_log"]["output"] == "curl: (7) Failed to connect\n"
+    assert result.structured_content["restart_count"] == 3
+
+
+@pytest.mark.anyio
+async def test_container_health_handles_non_running_container_without_health(
+    server, docker_client
+):
+    container = _container(
+        docker_client.calls,
+        {
+            "RestartCount": 0,
+            "Config": {"Image": "worker:1", "Cmd": None, "Entrypoint": ["/w"]},
+            "State": {
+                "Status": "exited",
+                "Running": False,
+                "OOMKilled": True,
+                "ExitCode": 137,
+                "Error": "",
+                "FinishedAt": "2026-11-14T11:00:00Z",
+            },
+        },
+        status="exited",
+    )
+    docker_client.containers.get = lambda _cid: container
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_health", {"container_id": "abc123"})
+    payload = result.structured_content
+    assert payload["status"] == "exited"
+    assert payload["health"] is None
+    assert payload["oom_killed"] is True
+    assert payload["exit_code"] == 137
+    assert payload["finished_at"] == "2026-11-14T11:00:00Z"
+    assert payload["command"] == ["/w"]

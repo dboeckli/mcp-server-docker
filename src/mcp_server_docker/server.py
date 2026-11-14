@@ -580,6 +580,65 @@ def container_inspect(
     return redact_env(_client(ctx).containers.get(container_id).attrs)
 
 
+_HEALTH_LOG_OUTPUT_LIMIT = 1000
+
+
+@tool(
+    description=(
+        "Summarise container health, restart count and exit state "
+        "without environment values"
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def container_health(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+) -> dict[str, Any]:
+    container = _client(ctx).containers.get(container_id)
+    attrs = container.attrs
+    config = attrs.get("Config") or {}
+    state = attrs.get("State") or {}
+    health = state.get("Health")
+    last_log = None
+    if isinstance(health, dict):
+        entries = health.get("Log") or []
+        if entries:
+            entry = entries[-1]
+            last_log = {
+                "start": entry.get("Start"),
+                "end": entry.get("End"),
+                "exit_code": entry.get("ExitCode"),
+                "output": (entry.get("Output") or "")[:_HEALTH_LOG_OUTPUT_LIMIT],
+            }
+    return {
+        "id": container.id,
+        "name": container.name,
+        "status": container.status,
+        "image": config.get("Image"),
+        "command": config.get("Cmd") or config.get("Entrypoint") or [],
+        "restart_count": attrs.get("RestartCount"),
+        "exit_code": state.get("ExitCode"),
+        "oom_killed": state.get("OOMKilled"),
+        "error": state.get("Error"),
+        "dead": state.get("Dead"),
+        "paused": state.get("Paused"),
+        "running": state.get("Running"),
+        "restarting": state.get("Restarting"),
+        "pid": state.get("Pid"),
+        "started_at": state.get("StartedAt"),
+        "finished_at": state.get("FinishedAt"),
+        "health": None
+        if not isinstance(health, dict)
+        else {
+            "status": health.get("Status"),
+            "failing_streak": health.get("FailingStreak"),
+            "last_log": last_log,
+        },
+    }
+
+
 @tool(
     description="List the processes running in a Docker container",
     annotations=ToolAnnotations(
