@@ -232,6 +232,14 @@ plugin) must be available on `PATH`. The container image built from this
 repository does not include the Docker CLI, so the Buildx tools are only usable
 when the server runs where the CLI is installed.
 
+CLI output is decoded as UTF-8 with malformed bytes replaced by `�` (U+FFFD),
+independent of the host code page, so build logs with non-UTF-8 bytes cannot
+crash a tool on Windows.
+
+`buildx_logs` accepts `progress="plain"` and `progress="rawjson"`. The
+`tty` mode needs a terminal, which a stdio MCP server never has, so the tool
+rejects it with an explanatory error instead of calling the CLI.
+
 ### System
 
 - `system_df`
