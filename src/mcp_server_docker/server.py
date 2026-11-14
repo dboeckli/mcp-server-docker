@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -49,6 +50,18 @@ class ListNetworksFilter(BaseModel):
     )
 
 
+class ListEventsFilters(BaseModel):
+    type: list[str] | None = Field(
+        None, description="Filter by object type (container, image, volume, network)"
+    )
+    event: list[str] | None = Field(None, description="Filter by event action")
+    container: list[str] | None = Field(None, description="Filter by container")
+    image: list[str] | None = Field(None, description="Filter by image")
+    label: list[str] | None = Field(
+        None, description="Filter by label, either `key` or `key=value` format"
+    )
+
+
 ContainerID = Annotated[str, Field(description="Container ID or name")]
 ImageName = Annotated[str, Field(description="Docker image name")]
 Detach = Annotated[bool, Field(description="Run container in the background")]
@@ -87,7 +100,9 @@ def _decode_cli_output(data: bytes) -> str:
     return data.decode(_CLI_ENCODING, errors="replace")
 
 
-def _run_docker(*args: str, combine_stderr: bool = False) -> str:
+def _run_docker(
+    *args: str, combine_stderr: bool = False, timeout: float | None = None
+) -> str:
     """Run the docker CLI and return stdout, raising on failure."""
     executable = shutil.which("docker")
     if executable is None:
@@ -99,6 +114,7 @@ def _run_docker(*args: str, combine_stderr: bool = False) -> str:
         text=True,
         encoding=_CLI_ENCODING,
         errors="replace",
+        timeout=timeout,
         check=False,
     )
     if result.returncode != 0:
@@ -580,6 +596,65 @@ def container_inspect(
     return redact_env(_client(ctx).containers.get(container_id).attrs)
 
 
+_HEALTH_LOG_OUTPUT_LIMIT = 1000
+
+
+@tool(
+    description=(
+        "Summarise container health, restart count and exit state "
+        "without environment values"
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def container_health(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+) -> dict[str, Any]:
+    container = _client(ctx).containers.get(container_id)
+    attrs = container.attrs
+    config = attrs.get("Config") or {}
+    state = attrs.get("State") or {}
+    health = state.get("Health")
+    last_log = None
+    if isinstance(health, dict):
+        entries = health.get("Log") or []
+        if entries:
+            entry = entries[-1]
+            last_log = {
+                "start": entry.get("Start"),
+                "end": entry.get("End"),
+                "exit_code": entry.get("ExitCode"),
+                "output": (entry.get("Output") or "")[:_HEALTH_LOG_OUTPUT_LIMIT],
+            }
+    return {
+        "id": container.id,
+        "name": container.name,
+        "status": container.status,
+        "image": config.get("Image"),
+        "command": config.get("Cmd") or config.get("Entrypoint") or [],
+        "restart_count": attrs.get("RestartCount"),
+        "exit_code": state.get("ExitCode"),
+        "oom_killed": state.get("OOMKilled"),
+        "error": state.get("Error"),
+        "dead": state.get("Dead"),
+        "paused": state.get("Paused"),
+        "running": state.get("Running"),
+        "restarting": state.get("Restarting"),
+        "pid": state.get("Pid"),
+        "started_at": state.get("StartedAt"),
+        "finished_at": state.get("FinishedAt"),
+        "health": None
+        if not isinstance(health, dict)
+        else {
+            "status": health.get("Status"),
+            "failing_streak": health.get("FailingStreak"),
+            "last_log": last_log,
+        },
+    }
+
+
 @tool(
     description="List the processes running in a Docker container",
     annotations=ToolAnnotations(
@@ -850,6 +925,77 @@ def system_df(
     return result
 
 
+_EVENTS_WINDOW_LIMITS = (1, 86400)
+_EVENTS_LIMIT_LIMITS = (1, 1000)
+_EVENTS_TIMEOUT_MARGIN = 10
+
+
+def _clamp(value: int, bounds: tuple[int, int]) -> int:
+    lower, upper = bounds
+    return max(lower, min(int(value), upper))
+
+
+@tool(
+    description=("List recent Docker events for a bounded window, newest first"),
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def events_list(
+    window_seconds: Annotated[
+        int, Field(description="How far back to look, in seconds (1-86400)")
+    ] = 900,
+    limit: Annotated[
+        int, Field(description="Maximum number of events to return (1-1000)")
+    ] = 100,
+    filters: Annotated[
+        ListEventsFilters | None, Field(description="Filter events")
+    ] = None,
+) -> dict[str, Any]:
+    window = _clamp(window_seconds, _EVENTS_WINDOW_LIMITS)
+    maximum = _clamp(limit, _EVENTS_LIMIT_LIMITS)
+    # Round the window end up: `--until` compares with sub-second precision on
+    # the daemon side, so truncating to the current second drops events from the
+    # last partial second. The extra wait is below one second.
+    until = int(time.time()) + 1
+    since = until - window
+    args = [
+        "events",
+        "--format",
+        "json",
+        "--since",
+        str(since),
+        "--until",
+        str(until),
+    ]
+    for key, values in (
+        filters.model_dump(exclude_none=True) if filters else {}
+    ).items():
+        for value in values:
+            args += ["--filter", f"{key}={value}"]
+
+    timed_out = False
+    try:
+        output = _run_docker(*args, timeout=window + _EVENTS_TIMEOUT_MARGIN)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        partial = exc.output or ""
+        output = _decode_cli_output(partial) if isinstance(partial, bytes) else partial
+
+    events = _parse_json_stream(output)
+    truncated = len(events) > maximum
+    result: dict[str, Any] = {
+        "events": events[-maximum:],
+        "count": min(len(events), maximum),
+        "truncated": truncated or timed_out,
+        "since": since,
+        "until": until,
+    }
+    if timed_out:
+        result["truncated_reason"] = "timeout"
+    return result
+
+
 @tool(
     description="List Docker networks",
     annotations=ToolAnnotations(
@@ -908,6 +1054,19 @@ def remove_network(
 
 
 @tool(
+    description="Inspect a Docker network with environment values redacted",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def network_inspect(
+    ctx: Context[AppContext],
+    network_id: Annotated[str, Field(description="Network ID or name")],
+) -> dict[str, Any]:
+    return redact_env(_client(ctx).networks.get(network_id).attrs)
+
+
+@tool(
     description="List Docker volumes",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -948,6 +1107,19 @@ def remove_volume(
     volume = _client(ctx).volumes.get(volume_name)
     volume.remove(force=force)
     return docker_to_dict(volume)
+
+
+@tool(
+    description="Inspect a Docker volume with environment values redacted",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def volume_inspect(
+    ctx: Context[AppContext],
+    volume_name: Annotated[str, Field(description="Volume name")],
+) -> dict[str, Any]:
+    return redact_env(_client(ctx).volumes.get(volume_name).attrs)
 
 
 _SYSTEM_INFO_KEYS = (

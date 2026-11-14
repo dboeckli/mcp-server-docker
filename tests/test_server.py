@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -630,7 +631,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 32
+        assert len(tools.tools) == 36
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -863,7 +864,7 @@ async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
-    assert len(tools.tools) == 32
+    assert len(tools.tools) == 36
     assert "list_containers" in {tool.name for tool in tools.tools}
     assert "container_stats" in {tool.name for tool in tools.tools}
 
@@ -882,9 +883,15 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
         blocked = await client.call_tool("create_container", {"image": "alpine"})
 
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 18
+    assert len(names) == 22
     assert all(tool.annotations.read_only_hint for tool in tools.tools)
     assert "create_container" not in names
+    assert {
+        "network_inspect",
+        "volume_inspect",
+        "container_health",
+        "events_list",
+    } <= names
     assert "buildx_du" in names
     assert "container_stats" in names
     assert {template.uri_template for template in templates.resource_templates} == {
@@ -904,6 +911,334 @@ async def test_production_stdio_read_only_cli_flag():
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 18
+    assert len(names) == 22
     assert "remove_container" not in names
     assert "container_stats" in names
+
+
+def _inspectable(calls, kind, attrs):
+    obj = Object(calls)
+    obj.attrs = attrs
+
+    def get(name):
+        calls.append((f"{kind}.get", name))
+        return obj
+
+    return get
+
+
+@pytest.mark.anyio
+async def test_network_inspect_returns_attributes_with_env_redacted(
+    server, docker_client
+):
+    docker_client.networks.get = _inspectable(
+        docker_client.calls,
+        "networks",
+        {
+            "Name": "db-net",
+            "Driver": "bridge",
+            "IPAM": {"Config": [{"Subnet": "172.18.0.0/16"}]},
+            "Config": {"Env": ["SECRET_TOKEN=abc123"]},
+        },
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("network_inspect", {"network_id": "db-net"})
+    assert docker_client.calls[-1] == ("networks.get", "db-net")
+    assert result.structured_content == {
+        "Name": "db-net",
+        "Driver": "bridge",
+        "IPAM": {"Config": [{"Subnet": "172.18.0.0/16"}]},
+        "Config": {"Env": ["SECRET_TOKEN=<redacted>"]},
+    }
+
+
+@pytest.mark.anyio
+async def test_volume_inspect_returns_attributes(server, docker_client):
+    docker_client.volumes.get = _inspectable(
+        docker_client.calls,
+        "volumes",
+        {
+            "Name": "pgdata",
+            "Driver": "local",
+            "Mountpoint": "/var/lib/docker/volumes/pgdata/_data",
+            "Labels": {"mcp-server-docker.project": "db"},
+            "Options": None,
+        },
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("volume_inspect", {"volume_name": "pgdata"})
+    assert docker_client.calls[-1] == ("volumes.get", "pgdata")
+    assert result.structured_content == {
+        "Name": "pgdata",
+        "Driver": "local",
+        "Mountpoint": "/var/lib/docker/volumes/pgdata/_data",
+        "Labels": {"mcp-server-docker.project": "db"},
+        "Options": None,
+    }
+
+
+@pytest.mark.anyio
+async def test_network_inspect_reports_unknown_network(server, docker_client):
+    def fail(_name):
+        raise docker.errors.NotFound("no such network")
+
+    docker_client.networks.get = fail
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("network_inspect", {"network_id": "nope"})
+    assert result.is_error
+    assert "no such network" in result.content[0].text
+
+
+def _container(calls, attrs, status="running"):
+    obj = Object(calls)
+    obj.id = "abc123"
+    obj.name = "web"
+    obj.status = status
+    obj.attrs = attrs
+    return obj
+
+
+@pytest.mark.anyio
+async def test_container_health_summarises_a_healthy_container(server, docker_client):
+    container = _container(
+        docker_client.calls,
+        {
+            "RestartCount": 1,
+            "Config": {
+                "Image": "nginx:1.27",
+                "Cmd": ["nginx", "-g", "daemon off;"],
+                "Env": ["DB_PASSWORD=hunter2"],
+            },
+            "State": {
+                "Status": "running",
+                "Running": True,
+                "Paused": False,
+                "Restarting": False,
+                "OOMKilled": False,
+                "Dead": False,
+                "Pid": 42,
+                "ExitCode": 0,
+                "Error": "",
+                "StartedAt": "2026-11-14T10:00:00.123456789Z",
+                "FinishedAt": "0001-01-01T00:00:00Z",
+                "Health": {
+                    "Status": "healthy",
+                    "FailingStreak": 0,
+                    "Log": [
+                        {
+                            "Start": "2026-11-14T10:00:10Z",
+                            "End": "2026-11-14T10:00:11Z",
+                            "ExitCode": 0,
+                            "Output": "ok\n",
+                        }
+                    ],
+                },
+            },
+        },
+    )
+    docker_client.containers.get = lambda _cid: container
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_health", {"container_id": "abc123"})
+    payload = result.structured_content
+    assert payload["id"] == "abc123"
+    assert payload["name"] == "web"
+    assert payload["status"] == "running"
+    assert payload["image"] == "nginx:1.27"
+    assert payload["command"] == ["nginx", "-g", "daemon off;"]
+    assert payload["restart_count"] == 1
+    assert payload["exit_code"] == 0
+    assert payload["oom_killed"] is False
+    assert payload["started_at"] == "2026-11-14T10:00:00.123456789Z"
+    assert payload["health"] == {
+        "status": "healthy",
+        "failing_streak": 0,
+        "last_log": {
+            "start": "2026-11-14T10:00:10Z",
+            "end": "2026-11-14T10:00:11Z",
+            "exit_code": 0,
+            "output": "ok\n",
+        },
+    }
+    assert "hunter2" not in json.dumps(payload)
+
+
+@pytest.mark.anyio
+async def test_container_health_reports_unhealthy_with_last_log(server, docker_client):
+    container = _container(
+        docker_client.calls,
+        {
+            "RestartCount": 3,
+            "Config": {"Image": "api:2", "Cmd": ["python", "-m", "api"]},
+            "State": {
+                "Status": "running",
+                "Running": True,
+                "ExitCode": 0,
+                "Health": {
+                    "Status": "unhealthy",
+                    "FailingStreak": 3,
+                    "Log": [
+                        {"ExitCode": 0, "Output": "ok\n"},
+                        {"ExitCode": 1, "Output": "curl: (7) Failed to connect\n"},
+                    ],
+                },
+            },
+        },
+    )
+    docker_client.containers.get = lambda _cid: container
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_health", {"container_id": "abc123"})
+    health = result.structured_content["health"]
+    assert health["status"] == "unhealthy"
+    assert health["failing_streak"] == 3
+    assert health["last_log"]["exit_code"] == 1
+    assert health["last_log"]["output"] == "curl: (7) Failed to connect\n"
+    assert result.structured_content["restart_count"] == 3
+
+
+@pytest.mark.anyio
+async def test_container_health_handles_non_running_container_without_health(
+    server, docker_client
+):
+    container = _container(
+        docker_client.calls,
+        {
+            "RestartCount": 0,
+            "Config": {"Image": "worker:1", "Cmd": None, "Entrypoint": ["/w"]},
+            "State": {
+                "Status": "exited",
+                "Running": False,
+                "OOMKilled": True,
+                "ExitCode": 137,
+                "Error": "",
+                "FinishedAt": "2026-11-14T11:00:00Z",
+            },
+        },
+        status="exited",
+    )
+    docker_client.containers.get = lambda _cid: container
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_health", {"container_id": "abc123"})
+    payload = result.structured_content
+    assert payload["status"] == "exited"
+    assert payload["health"] is None
+    assert payload["oom_killed"] is True
+    assert payload["exit_code"] == 137
+    assert payload["finished_at"] == "2026-11-14T11:00:00Z"
+    assert payload["command"] == ["/w"]
+
+
+EVENTS = [
+    {"Type": "container", "Action": "start", "Actor": {"ID": "a1", "Attributes": {}}},
+    {"Type": "container", "Action": "die", "Actor": {"ID": "a2", "Attributes": {}}},
+    {"Type": "container", "Action": "oom", "Actor": {"ID": "a3", "Attributes": {}}},
+]
+
+
+def _events_stdout(entries):
+    return "".join(f"{json.dumps(entry)}\n" for entry in entries)
+
+
+@pytest.mark.anyio
+async def test_events_list_passes_bounded_window_and_filters(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=_events_stdout(EVENTS[:2])))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "events_list",
+            {
+                "window_seconds": 60,
+                "limit": 10,
+                "filters": {"type": ["container"], "event": ["die"], "label": ["a=b"]},
+            },
+        )
+    command = docker_cli.calls[-1]
+    assert command[1:5] == ["events", "--format", "json", "--since"]
+    assert command[6] == "--until"
+    assert int(command[7]) - int(command[5]) == 60
+    assert command[8:] == [
+        "--filter",
+        "type=container",
+        "--filter",
+        "event=die",
+        "--filter",
+        "label=a=b",
+    ]
+    assert docker_cli.kwargs[-1]["timeout"] == 70
+    payload = result.structured_content
+    assert payload["count"] == 2
+    assert payload["truncated"] is False
+    assert payload["events"] == EVENTS[:2]
+    assert payload["until"] == int(command[7])
+
+
+@pytest.mark.anyio
+async def test_events_list_defaults_to_a_bounded_window(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=""))
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool("events_list", {})
+    command = docker_cli.calls[-1]
+    assert int(command[7]) - int(command[5]) == 900
+    assert docker_cli.kwargs[-1]["timeout"] == 910
+
+
+@pytest.mark.anyio
+async def test_events_list_keeps_newest_events_and_flags_truncation(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=_events_stdout(EVENTS)))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {"limit": 2})
+    payload = result.structured_content
+    assert payload["events"] == EVENTS[1:]
+    assert payload["count"] == 2
+    assert payload["truncated"] is True
+
+
+@pytest.mark.anyio
+async def test_events_list_empty_window_is_not_an_error(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=""))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {"window_seconds": 1})
+    assert result.is_error is False
+    assert result.structured_content["events"] == []
+    assert result.structured_content["count"] == 0
+    assert result.structured_content["truncated"] is False
+
+
+@pytest.mark.anyio
+async def test_events_list_returns_partial_events_on_cli_timeout(
+    server, docker_cli, monkeypatch
+):
+    def timeout(*_args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd="docker events",
+            timeout=kwargs["timeout"],
+            output=_events_stdout(EVENTS[:1]),
+        )
+
+    monkeypatch.setattr(server_module.subprocess, "run", timeout)
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {})
+    assert result.is_error is False
+    assert result.structured_content["events"] == EVENTS[:1]
+    assert result.structured_content["truncated"] is True
+    assert result.structured_content["truncated_reason"] == "timeout"
+
+
+@pytest.mark.anyio
+async def test_events_list_reports_cli_errors(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout="", stderr="boom\n", returncode=1))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {})
+    assert result.is_error
+    assert "boom" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_events_list_includes_events_from_the_current_second(
+    server, docker_cli, monkeypatch
+):
+    monkeypatch.setattr(server_module.time, "time", lambda: 1000.75)
+    docker_cli.responses.append(FakeProcess(stdout=""))
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool("events_list", {"window_seconds": 10})
+    command = docker_cli.calls[-1]
+    assert command[5] == "991"
+    assert command[7] == "1001"
