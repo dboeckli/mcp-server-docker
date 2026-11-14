@@ -155,9 +155,13 @@ Read either URI with a Docker container ID or name.
 - `remove_container`
 - `container_inspect`
 - `container_processes`
+- `container_stats`
 
 `container_inspect` redacts environment values like `image_inspect`.
-`container_processes` is the equivalent of `docker top`.
+`container_processes` is the equivalent of `docker top`. `container_stats`
+returns a one-shot CPU, memory, network and block-IO snapshot (`stream=false`),
+so it never blocks a tool call; the `docker://containers/{container_id}/stats`
+resource stays available for clients that read resources.
 
 ### Images
 
@@ -226,9 +230,9 @@ Start the server with `--read-only`, or set
 `readOnlyHint=true`. Write and destructive tools are not registered at all:
 they are absent from `tools/list` and calls to them return `Unknown tool`.
 
-- Default: all 31 tools.
-- Read-only: the 17 read-only tools, including all `list_*`, log, inspect,
-  disk-usage, and Buildx inspection tools.
+- Default: all 32 tools.
+- Read-only: the 18 read-only tools, including all `list_*`, log, stats,
+  inspect, disk-usage, and Buildx inspection tools.
 - The container log/stats resources and the `docker_compose` prompt remain
   available.
 
