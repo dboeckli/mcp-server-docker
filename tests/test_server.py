@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -20,13 +21,14 @@ class Object:
     image = None
     ports: ClassVar = {}
     attrs: ClassVar = {"Config": {}, "State": {}, "NetworkSettings": {}}
+    logs_payload: ClassVar = b"line\n"
 
     def __init__(self, calls: list[tuple[str, Any]]):
         self.calls = calls
 
     def logs(self, **kwargs):
         self.calls.append(("object.logs", kwargs))
-        return b"line\n"
+        return type(self).logs_payload
 
     def stats(self, **kwargs):
         self.calls.append(("object.stats", kwargs))
@@ -173,6 +175,23 @@ def docker_cli(monkeypatch):
     return cli
 
 
+def test_run_docker_decodes_utf8_and_replaces_undecodable_bytes(monkeypatch):
+    monkeypatch.setattr(server_module.shutil, "which", lambda _name: sys.executable)
+    output = server_module._run_docker(
+        "-c", "import sys; sys.stdout.buffer.write('grün→'.encode() + b'\\x90')"
+    )
+    assert output == "grün→\ufffd"
+
+
+def test_run_docker_replaces_undecodable_bytes_in_errors(monkeypatch):
+    monkeypatch.setattr(server_module.shutil, "which", lambda _name: sys.executable)
+    with pytest.raises(RuntimeError) as excinfo:
+        server_module._run_docker(
+            "-c", "import sys; sys.stderr.buffer.write(b'bad\\x90byte'); sys.exit(1)"
+        )
+    assert "bad\ufffdbyte" in str(excinfo.value)
+
+
 @pytest.mark.anyio
 async def test_buildx_list_parses_json_and_json_lines(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
@@ -307,6 +326,18 @@ async def test_buildx_logs_reports_unknown_ref(server, docker_cli):
         result = await client.call_tool("buildx_logs", {"ref": "unknown"})
         assert result.is_error
         assert "no record found" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_buildx_logs_rejects_tty_progress(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "buildx_logs", {"ref": "abc", "progress": "tty"}
+        )
+    assert result.is_error
+    message = result.content[0].text
+    assert "plain" in message and "rawjson" in message
+    assert docker_cli.calls == []
 
 
 @pytest.mark.anyio
@@ -764,6 +795,18 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
         }
         await client.call_tool("remove_volume", {"volume_name": "v", "force": True})
         assert docker_client.call("object.remove") == {"force": True}
+
+
+@pytest.mark.anyio
+async def test_container_logs_replace_undecodable_bytes(
+    server, docker_client, monkeypatch
+):
+    monkeypatch.setattr(Object, "logs_payload", b"line\x90\n")
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("fetch_container_logs", {"container_id": "x"})
+        logs = (await client.read_resource("docker://containers/x/logs")).contents[0]
+    assert result.structured_content == {"logs": ["line\ufffd", ""]}
+    assert logs.text == "line\ufffd\n"
 
 
 @pytest.mark.anyio

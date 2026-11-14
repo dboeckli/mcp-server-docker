@@ -79,6 +79,14 @@ def _client(ctx: Context[AppContext]) -> docker.DockerClient:
     return ctx.request_context.lifespan_context.docker
 
 
+_CLI_ENCODING = "utf-8"
+
+
+def _decode_cli_output(data: bytes) -> str:
+    """Decode CLI or container output as UTF-8, replacing malformed bytes."""
+    return data.decode(_CLI_ENCODING, errors="replace")
+
+
 def _run_docker(*args: str, combine_stderr: bool = False) -> str:
     """Run the docker CLI and return stdout, raising on failure."""
     executable = shutil.which("docker")
@@ -89,6 +97,8 @@ def _run_docker(*args: str, combine_stderr: bool = False) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT if combine_stderr else subprocess.PIPE,
         text=True,
+        encoding=_CLI_ENCODING,
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -293,7 +303,7 @@ The following are guidelines for you to follow when interacting with Docker Tool
 )
 def container_logs(container_id: str, ctx: Context) -> str:
     container = ctx.request_context.lifespan_context.docker.containers.get(container_id)
-    return container.logs(tail=100).decode("utf-8")
+    return _decode_cli_output(container.logs(tail=100))
 
 
 def _one_shot_stats(client: docker.DockerClient, container_id: str) -> dict[str, Any]:
@@ -521,11 +531,9 @@ def fetch_container_logs(
     ] = 100,
 ) -> dict[str, list[str]]:
     return {
-        "logs": _client(ctx)
-        .containers.get(container_id)
-        .logs(tail=tail)
-        .decode("utf-8")
-        .split("\n")
+        "logs": _decode_cli_output(
+            _client(ctx).containers.get(container_id).logs(tail=tail)
+        ).split("\n")
     }
 
 
@@ -813,6 +821,8 @@ def buildx_logs(
     ] = "plain",
 ) -> str:
     build_id = ref.rsplit("/", 1)[-1]
+    if progress == "tty":
+        raise RuntimeError("progress='tty' needs a terminal; use 'plain' or 'rawjson'")
     args = ["buildx", "history", "logs", build_id]
     if builder is not None:
         args += ["--builder", builder]
