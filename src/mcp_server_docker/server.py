@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -49,6 +50,18 @@ class ListNetworksFilter(BaseModel):
     )
 
 
+class ListEventsFilters(BaseModel):
+    type: list[str] | None = Field(
+        None, description="Filter by object type (container, image, volume, network)"
+    )
+    event: list[str] | None = Field(None, description="Filter by event action")
+    container: list[str] | None = Field(None, description="Filter by container")
+    image: list[str] | None = Field(None, description="Filter by image")
+    label: list[str] | None = Field(
+        None, description="Filter by label, either `key` or `key=value` format"
+    )
+
+
 ContainerID = Annotated[str, Field(description="Container ID or name")]
 ImageName = Annotated[str, Field(description="Docker image name")]
 Detach = Annotated[bool, Field(description="Run container in the background")]
@@ -87,7 +100,9 @@ def _decode_cli_output(data: bytes) -> str:
     return data.decode(_CLI_ENCODING, errors="replace")
 
 
-def _run_docker(*args: str, combine_stderr: bool = False) -> str:
+def _run_docker(
+    *args: str, combine_stderr: bool = False, timeout: float | None = None
+) -> str:
     """Run the docker CLI and return stdout, raising on failure."""
     executable = shutil.which("docker")
     if executable is None:
@@ -99,6 +114,7 @@ def _run_docker(*args: str, combine_stderr: bool = False) -> str:
         text=True,
         encoding=_CLI_ENCODING,
         errors="replace",
+        timeout=timeout,
         check=False,
     )
     if result.returncode != 0:
@@ -906,6 +922,74 @@ def system_df(
     if verbose:
         detail = _run_docker("system", "df", "-v", "--format", "json")
         result["detail"] = json.loads(detail) if detail.strip() else {}
+    return result
+
+
+_EVENTS_WINDOW_LIMITS = (1, 86400)
+_EVENTS_LIMIT_LIMITS = (1, 1000)
+_EVENTS_TIMEOUT_MARGIN = 10
+
+
+def _clamp(value: int, bounds: tuple[int, int]) -> int:
+    lower, upper = bounds
+    return max(lower, min(int(value), upper))
+
+
+@tool(
+    description=("List recent Docker events for a bounded window, newest first"),
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def events_list(
+    window_seconds: Annotated[
+        int, Field(description="How far back to look, in seconds (1-86400)")
+    ] = 900,
+    limit: Annotated[
+        int, Field(description="Maximum number of events to return (1-1000)")
+    ] = 100,
+    filters: Annotated[
+        ListEventsFilters | None, Field(description="Filter events")
+    ] = None,
+) -> dict[str, Any]:
+    window = _clamp(window_seconds, _EVENTS_WINDOW_LIMITS)
+    maximum = _clamp(limit, _EVENTS_LIMIT_LIMITS)
+    until = int(time.time())
+    since = until - window
+    args = [
+        "events",
+        "--format",
+        "json",
+        "--since",
+        str(since),
+        "--until",
+        str(until),
+    ]
+    for key, values in (
+        filters.model_dump(exclude_none=True) if filters else {}
+    ).items():
+        for value in values:
+            args += ["--filter", f"{key}={value}"]
+
+    timed_out = False
+    try:
+        output = _run_docker(*args, timeout=window + _EVENTS_TIMEOUT_MARGIN)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        partial = exc.output or ""
+        output = _decode_cli_output(partial) if isinstance(partial, bytes) else partial
+
+    events = _parse_json_stream(output)
+    truncated = len(events) > maximum
+    result: dict[str, Any] = {
+        "events": events[-maximum:],
+        "count": min(len(events), maximum),
+        "truncated": truncated or timed_out,
+        "since": since,
+        "until": until,
+    }
+    if timed_out:
+        result["truncated_reason"] = "timeout"
     return result
 
 

@@ -1121,3 +1121,107 @@ async def test_container_health_handles_non_running_container_without_health(
     assert payload["exit_code"] == 137
     assert payload["finished_at"] == "2026-11-14T11:00:00Z"
     assert payload["command"] == ["/w"]
+
+
+EVENTS = [
+    {"Type": "container", "Action": "start", "Actor": {"ID": "a1", "Attributes": {}}},
+    {"Type": "container", "Action": "die", "Actor": {"ID": "a2", "Attributes": {}}},
+    {"Type": "container", "Action": "oom", "Actor": {"ID": "a3", "Attributes": {}}},
+]
+
+
+def _events_stdout(entries):
+    return "".join(f"{json.dumps(entry)}\n" for entry in entries)
+
+
+@pytest.mark.anyio
+async def test_events_list_passes_bounded_window_and_filters(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=_events_stdout(EVENTS[:2])))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "events_list",
+            {
+                "window_seconds": 60,
+                "limit": 10,
+                "filters": {"type": ["container"], "event": ["die"], "label": ["a=b"]},
+            },
+        )
+    command = docker_cli.calls[-1]
+    assert command[1:5] == ["events", "--format", "json", "--since"]
+    assert command[6] == "--until"
+    assert int(command[7]) - int(command[5]) == 60
+    assert command[8:] == [
+        "--filter",
+        "type=container",
+        "--filter",
+        "event=die",
+        "--filter",
+        "label=a=b",
+    ]
+    assert docker_cli.kwargs[-1]["timeout"] == 70
+    payload = result.structured_content
+    assert payload["count"] == 2
+    assert payload["truncated"] is False
+    assert payload["events"] == EVENTS[:2]
+    assert payload["until"] == int(command[7])
+
+
+@pytest.mark.anyio
+async def test_events_list_defaults_to_a_bounded_window(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=""))
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool("events_list", {})
+    command = docker_cli.calls[-1]
+    assert int(command[7]) - int(command[5]) == 900
+    assert docker_cli.kwargs[-1]["timeout"] == 910
+
+
+@pytest.mark.anyio
+async def test_events_list_keeps_newest_events_and_flags_truncation(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=_events_stdout(EVENTS)))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {"limit": 2})
+    payload = result.structured_content
+    assert payload["events"] == EVENTS[1:]
+    assert payload["count"] == 2
+    assert payload["truncated"] is True
+
+
+@pytest.mark.anyio
+async def test_events_list_empty_window_is_not_an_error(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout=""))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {"window_seconds": 1})
+    assert result.is_error is False
+    assert result.structured_content["events"] == []
+    assert result.structured_content["count"] == 0
+    assert result.structured_content["truncated"] is False
+
+
+@pytest.mark.anyio
+async def test_events_list_returns_partial_events_on_cli_timeout(
+    server, docker_cli, monkeypatch
+):
+    def timeout(*_args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd="docker events",
+            timeout=kwargs["timeout"],
+            output=_events_stdout(EVENTS[:1]),
+        )
+
+    monkeypatch.setattr(server_module.subprocess, "run", timeout)
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {})
+    assert result.is_error is False
+    assert result.structured_content["events"] == EVENTS[:1]
+    assert result.structured_content["truncated"] is True
+    assert result.structured_content["truncated_reason"] == "timeout"
+
+
+@pytest.mark.anyio
+async def test_events_list_reports_cli_errors(server, docker_cli):
+    docker_cli.responses.append(FakeProcess(stdout="", stderr="boom\n", returncode=1))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("events_list", {})
+    assert result.is_error
+    assert "boom" in result.content[0].text
