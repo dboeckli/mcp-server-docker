@@ -689,8 +689,7 @@ cli = [
 ]
 
 [[package]]
-name = "mcp-server-docker"
-version = "0.6.0"
+name = "mcp-server-docker-dboeckli"
 source = { editable = "." }
 dependencies = [
     { name = "docker" },

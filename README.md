@@ -28,6 +28,7 @@ An MCP server for managing Docker with natural language!
 - Buildx tools: `buildx_list`, `buildx_history`, and `buildx_logs`
 - Clear tool error messages, including Docker and Buildx failures
 - A published container image: `ghcr.io/dboeckli/mcp-server-docker`
+- A published PyPI package: `mcp-server-docker-dboeckli`
 - Docker/Buildx integration tests and coverage in CI
 - Automated dependency updates (Dependabot and Renovate)
 
@@ -63,16 +64,57 @@ On MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
 On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
 <details>
-  <summary>Install from GitHub with uv</summary>
+  <summary>Install from PyPI with uv (recommended)</summary>
 
-This fork is not published to PyPI. Install it directly from the tagged GitHub
-source (`v0.6.0`).
+The package is published to PyPI as
+[`mcp-server-docker-dboeckli`](https://pypi.org/project/mcp-server-docker-dboeckli/).
+That is fast to start (a wheel download, no clone and no build) and needs no
+Git.
+
+> The PyPI name **`mcp-server-docker`** belongs to the
+> [upstream project](https://github.com/ckreiling/mcp-server-docker) and stops at
+> `0.3.0`. It does not contain the Buildx tools of this fork.
 
 If you don't have `uv` installed, follow the installation instructions for your
 system:
 [link](https://docs.astral.sh/uv/getting-started/installation/#installation-methods)
 
 Then add the following to your MCP servers file:
+
+```
+"mcpServers": {
+  "mcp-server-docker": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "mcp-server-docker-dboeckli==0.6.0",
+      "mcp-server-docker"
+    ]
+  }
+}
+```
+
+</details>
+
+<details>
+  <summary>Install from a GitHub release wheel</summary>
+
+Every release attaches the built wheel and sdist. This works without PyPI and
+without cloning the repository:
+
+```bash
+uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.6.0/mcp_server_docker_dboeckli-0.6.0-py3-none-any.whl \
+  mcp-server-docker
+```
+
+</details>
+
+<details>
+  <summary>Install from GitHub source with uv</summary>
+
+Pins the Git tag and builds from source on first start. Use this only when you
+want to run unreleased commits; it needs Git and is slower to start than the
+PyPI or wheel install.
 
 ```
 "mcpServers": {
