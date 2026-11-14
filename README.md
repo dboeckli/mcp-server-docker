@@ -165,6 +165,7 @@ Read either URI with a Docker container ID or name.
 ### Buildx
 
 - `buildx_list`
+- `buildx_du`
 - `buildx_history`
 - `buildx_logs`
 
@@ -172,6 +173,14 @@ These tools invoke the `docker` CLI, so the `docker` binary (with the Buildx
 plugin) must be available on `PATH`. The container image built from this
 repository does not include the Docker CLI, so the Buildx tools are only usable
 when the server runs where the CLI is installed.
+
+### System
+
+- `system_df`
+
+`system_df` uses the `docker` CLI and reports the same summary as
+`docker system df`, including reclaimable space. Pass `verbose=true` for the
+per-image, per-container, per-volume, and build-cache detail.
 
 ### Networks
 

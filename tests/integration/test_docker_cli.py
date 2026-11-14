@@ -30,3 +30,12 @@ def test_run_docker_merges_stderr_for_buildx_logs(build_record):
     )
     assert output.strip()
     assert "hello.txt" in output
+
+
+@pytest.mark.integration
+def test_buildx_du_reports_the_current_builder(build_record):
+    usage = server_module.buildx_du()
+    assert usage
+    current = next(item for item in usage if item["current"])
+    assert "error" not in current
+    assert current["total"]

@@ -111,6 +111,19 @@ def _parse_json_stream(output: str) -> list[dict[str, Any]]:
     raise RuntimeError("unexpected buildx JSON output")
 
 
+_DU_FIELDS = ("shared", "private", "reclaimable", "total")
+
+
+def _parse_du_summary(output: str) -> dict[str, str | None]:
+    values: dict[str, str | None] = {field: None for field in _DU_FIELDS}
+    for line in output.splitlines():
+        label, separator, value = line.partition(":")
+        key = label.strip().lower()
+        if separator and key in values:
+            values[key] = value.strip()
+    return values
+
+
 @asynccontextmanager
 async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
     """Create and close the Docker client for one server lifetime."""
@@ -634,6 +647,46 @@ def buildx_list() -> list[dict[str, Any]]:
 
 
 @tool(
+    description="Show Docker Buildx cache usage per builder",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def buildx_du(
+    builder: Annotated[
+        str | None, Field(description="Builder instance to query")
+    ] = None,
+    verbose: Annotated[
+        bool, Field(description="Include individual cache records")
+    ] = False,
+) -> list[dict[str, Any]]:
+    builders = (
+        [{"Name": builder, "Current": None}]
+        if builder is not None
+        else _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
+    )
+    results: list[dict[str, Any]] = []
+    for entry in builders:
+        name = entry.get("Name") or entry.get("name")
+        result: dict[str, Any] = {
+            "builder": name,
+            "current": entry.get("Current", entry.get("current")),
+        }
+        try:
+            result.update(
+                _parse_du_summary(_run_docker("buildx", "du", "--builder", name))
+            )
+            if verbose:
+                result["records"] = _parse_json_stream(
+                    _run_docker("buildx", "du", "--builder", name, "--format", "json")
+                )
+        except RuntimeError as exc:
+            result["error"] = str(exc)
+        results.append(result)
+    return results
+
+
+@tool(
     description="List Docker Buildx build records",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
@@ -672,6 +725,26 @@ def buildx_logs(
         args += ["--builder", builder]
     args += ["--progress", progress]
     return _run_docker(*args, combine_stderr=True)
+
+
+@tool(
+    description="Show Docker disk usage, including reclaimable space",
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def system_df(
+    verbose: Annotated[
+        bool, Field(description="Include detailed per-object usage")
+    ] = False,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "summary": _parse_json_stream(_run_docker("system", "df", "--format", "json"))
+    }
+    if verbose:
+        detail = _run_docker("system", "df", "-v", "--format", "json")
+        result["detail"] = json.loads(detail) if detail.strip() else {}
+    return result
 
 
 @tool(
