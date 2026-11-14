@@ -196,10 +196,15 @@ Read either URI with a Docker container ID or name.
 - `stop_container`
 - `remove_container`
 - `container_inspect`
+- `container_health`
 - `container_processes`
 - `container_stats`
 
 `container_inspect` redacts environment values like `image_inspect`.
+`container_health` returns a compact summary instead of the full inspect
+payload: state, health status with the last health log entry, restart count,
+exit code, `OOMKilled`, start/finish timestamps, image and command. It builds a
+fresh response, so no environment value is included.
 `container_processes` is the equivalent of `docker top`. `container_stats`
 returns a one-shot CPU, memory, network and block-IO snapshot (`stream=false`),
 so it never blocks a tool call; the `docker://containers/{container_id}/stats`
@@ -250,17 +255,50 @@ rejects it with an explanatory error instead of calling the CLI.
 `docker system df`, including reclaimable space. Pass `verbose=true` for the
 per-image, per-container, per-volume, and build-cache detail.
 
+### Events
+
+- `events_list`
+
+`events_list` reports recent Docker events (`die`, `oom`, `unhealthy`, restart
+loops) for a window that always ends *now*, so a call can never wait for future
+events:
+
+- `window_seconds` (default `900`, clamped to `1..86400`) is how far back to
+  look. There is no `until` parameter on purpose.
+- `limit` (default `100`, clamped to `1..1000`) keeps the **newest** events and
+  sets `truncated=true` when the window holds more.
+- `filters` accepts `type`, `event`, `container`, `image` and `label`, each a
+  list, and maps them to repeated `--filter key=value` arguments.
+- The CLI call itself is bounded too: if `docker events` does not return in
+  time, the events collected so far are returned with `truncated=true` and
+  `truncated_reason="timeout"` instead of a generic timeout error.
+
+Like the Buildx tools, `events_list` invokes the `docker` CLI and needs it on
+`PATH`.
+
 ### Networks
 
 - `list_networks`
+- `network_inspect`
 - `create_network`
 - `remove_network`
+
+`network_inspect` returns the full network attributes, including driver, IPAM
+configuration and connected containers.
 
 ### Volumes
 
 - `list_volumes`
+- `volume_inspect`
 - `create_volume`
 - `remove_volume`
+
+`volume_inspect` returns the full volume attributes, including driver,
+mountpoint, labels and options.
+
+Both inspect tools apply the same environment redaction as
+`container_inspect` (`<redacted>`), so the reading posture stays uniform even if
+the daemon adds a `Config.Env` section.
 
 ## 📝 Prompts
 
@@ -280,9 +318,10 @@ Start the server with `--read-only`, or set
 `readOnlyHint=true`. Write and destructive tools are not registered at all:
 they are absent from `tools/list` and calls to them return `Unknown tool`.
 
-- Default: all 32 tools.
-- Read-only: the 18 read-only tools, including all `list_*`, log, stats,
-  inspect, disk-usage, and Buildx inspection tools.
+- Default: all 36 tools.
+- Read-only: the 22 read-only tools, including all `list_*`, log, stats,
+  inspect, `container_health`, `events_list`, disk-usage, and Buildx inspection
+  tools.
 - The container log/stats resources and the `docker_compose` prompt remain
   available.
 

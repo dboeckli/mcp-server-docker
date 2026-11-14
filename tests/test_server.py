@@ -631,7 +631,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 32
+        assert len(tools.tools) == 36
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -864,7 +864,7 @@ async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
-    assert len(tools.tools) == 32
+    assert len(tools.tools) == 36
     assert "list_containers" in {tool.name for tool in tools.tools}
     assert "container_stats" in {tool.name for tool in tools.tools}
 
@@ -883,9 +883,15 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
         blocked = await client.call_tool("create_container", {"image": "alpine"})
 
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 18
+    assert len(names) == 22
     assert all(tool.annotations.read_only_hint for tool in tools.tools)
     assert "create_container" not in names
+    assert {
+        "network_inspect",
+        "volume_inspect",
+        "container_health",
+        "events_list",
+    } <= names
     assert "buildx_du" in names
     assert "container_stats" in names
     assert {template.uri_template for template in templates.resource_templates} == {
@@ -905,7 +911,7 @@ async def test_production_stdio_read_only_cli_flag():
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 18
+    assert len(names) == 22
     assert "remove_container" not in names
     assert "container_stats" in names
 
