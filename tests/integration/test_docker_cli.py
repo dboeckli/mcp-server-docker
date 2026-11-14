@@ -39,3 +39,9 @@ def test_buildx_du_reports_the_current_builder(build_record):
     current = next(item for item in usage if item["current"])
     assert "error" not in current
     assert current["total"]
+
+
+@pytest.mark.integration
+def test_buildx_inspect_returns_builder_details(buildx_history_ready):
+    output = server_module.buildx_inspect()
+    assert "Driver:" in output
