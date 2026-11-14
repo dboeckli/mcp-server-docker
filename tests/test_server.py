@@ -32,6 +32,10 @@ class Object:
         self.calls.append(("object.stats", kwargs))
         return {"cpu": 1}
 
+    def top(self):
+        self.calls.append(("object.top", None))
+        return {"Titles": ["PID", "CMD"], "Processes": [["1", "nginx"]]}
+
     def start(self):
         self.calls.append(("object.start", None))
 
@@ -500,12 +504,50 @@ async def test_buildx_inspect_returns_text_and_optional_builder(server, docker_c
 
 
 @pytest.mark.anyio
+async def test_container_inspect_redacts_env(server, docker_client):
+    class Container:
+        attrs: ClassVar = {
+            "Config": {"Env": ["SECRET=abc"]},
+            "ContainerConfig": {"Env": ["TOKEN=x=y"]},
+            "State": {"Running": True},
+        }
+
+    docker_client.containers.get = lambda name: (
+        docker_client.calls.append(("containers.get", name)),
+        Container(),
+    )[1]
+
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_inspect", {"container_id": "web"})
+        assert result.structured_content == {
+            "Config": {"Env": ["SECRET=<redacted>"]},
+            "ContainerConfig": {"Env": ["TOKEN=<redacted>"]},
+            "State": {"Running": True},
+        }
+        assert docker_client.call("containers.get") == "web"
+
+
+@pytest.mark.anyio
+async def test_container_processes_calls_docker_top(server, docker_client):
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("container_processes", {"container_id": "web"})
+        assert result.structured_content == {
+            "Titles": ["PID", "CMD"],
+            "Processes": [["1", "nginx"]],
+        }
+        assert docker_client.calls[-2:] == [
+            ("containers.get", "web"),
+            ("object.top", None),
+        ]
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 27
+        assert len(tools.tools) == 29
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -520,6 +562,11 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
+        for name in ("container_inspect", "container_processes"):
+            tool = next(tool for tool in tools.tools if tool.name == name)
+            assert tool.annotations.read_only_hint
+            assert tool.annotations.idempotent_hint
+            assert tool.annotations.open_world_hint is False
         buildx_inspect_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_inspect"
         )
