@@ -219,6 +219,44 @@ lets the LLM see the current state, which is useful for cleanup.
 This prompt is not required to use the server; the tools work directly without
 it.
 
+## 🔒 Read-only mode
+
+Start the server with `--read-only`, or set
+`MCP_SERVER_DOCKER_READ_ONLY=1`, to expose only tools annotated with
+`readOnlyHint=true`. Write and destructive tools are not registered at all:
+they are absent from `tools/list` and calls to them return `Unknown tool`.
+
+- Default: all 31 tools.
+- Read-only: the 17 read-only tools, including all `list_*`, log, inspect,
+  disk-usage, and Buildx inspection tools.
+- The container log/stats resources and the `docker_compose` prompt remain
+  available.
+
+Example with `uvx`:
+
+```json
+"args": [
+  "--from",
+  "git+https://github.com/dboeckli/mcp-server-docker@v0.5.0",
+  "mcp-server-docker",
+  "--read-only"
+]
+```
+
+Or with the environment variable:
+
+```json
+"env": {
+  "MCP_SERVER_DOCKER_READ_ONLY": "1"
+}
+```
+
+For the sbx MCP gateway, append `--read-only` to the comma-separated `--args`
+list, e.g. `sbx mcp add docker --args "--from,...,mcp-server-docker,--read-only"`.
+
+Read-only mode is a best-effort guardrail, not a sandbox boundary. The process
+still has host Docker access; keep gateway policy and sandbox isolation in place.
+
 ## 🚧 Disclaimers
 
 ### Sensitive Data

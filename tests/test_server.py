@@ -799,8 +799,48 @@ async def test_internally_created_client_is_closed(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_production_stdio_command_lists_tools():
+async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
+    assert len(tools.tools) == 31
     assert "list_containers" in {tool.name for tool in tools.tools}
+
+
+@pytest.mark.anyio
+async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
+    params = StdioServerParameters(
+        command="uv",
+        args=["run", "mcp-server-docker"],
+        env={"MCP_SERVER_DOCKER_READ_ONLY": "1"},
+    )
+    async with Client(stdio_client(params), raise_exceptions=True) as client:
+        tools = await client.list_tools()
+        templates = await client.list_resource_templates()
+        prompts = await client.list_prompts()
+        blocked = await client.call_tool("create_container", {"image": "alpine"})
+
+    names = {tool.name for tool in tools.tools}
+    assert len(names) == 17
+    assert all(tool.annotations.read_only_hint for tool in tools.tools)
+    assert "create_container" not in names
+    assert "buildx_du" in names
+    assert {template.uri_template for template in templates.resource_templates} == {
+        "docker://containers/{container_id}/logs",
+        "docker://containers/{container_id}/stats",
+    }
+    assert prompts.prompts
+    assert blocked.is_error
+    assert "Unknown tool" in blocked.content[0].text
+
+
+@pytest.mark.anyio
+async def test_production_stdio_read_only_cli_flag():
+    params = StdioServerParameters(
+        command="uv", args=["run", "mcp-server-docker", "--read-only"]
+    )
+    async with Client(stdio_client(params), raise_exceptions=True) as client:
+        tools = await client.list_tools()
+    names = {tool.name for tool in tools.tools}
+    assert len(names) == 17
+    assert "remove_container" not in names

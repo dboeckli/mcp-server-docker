@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from mcp_server_docker._version import __version__
 from mcp_server_docker.output_schemas import docker_to_dict
 from mcp_server_docker.redaction import redact_env
+from mcp_server_docker.settings import ServerSettings, is_tool_enabled
 
 
 @dataclass
@@ -136,6 +137,7 @@ async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
 
 
 app = MCPServer("docker-server", version=__version__, lifespan=lifespan)
+settings = ServerSettings.from_env_and_argv()
 
 
 class ToolRuntimeError(ToolError, RuntimeError):
@@ -145,7 +147,7 @@ class ToolRuntimeError(ToolError, RuntimeError):
 def tool(
     *args: Any, **kwargs: Any
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Register a tool and surface anticipated failures to the model."""
+    """Register a tool when the current server settings allow it."""
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(fn)
@@ -157,6 +159,9 @@ def tool(
             except Exception as exc:
                 raise ToolRuntimeError(str(exc)) from exc
 
+        name = kwargs.get("name") or fn.__name__
+        if not is_tool_enabled(name, kwargs.get("annotations"), settings):
+            return wrapper
         return app.tool(*args, **kwargs)(wrapper)
 
     return decorator
