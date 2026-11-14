@@ -916,7 +916,7 @@ async def test_production_stdio_read_only_cli_flag():
     assert "container_stats" in names
 
 
-def _inspectable(calls, kind, identifier, attrs):
+def _inspectable(calls, kind, attrs):
     obj = Object(calls)
     obj.attrs = attrs
 
@@ -934,7 +934,6 @@ async def test_network_inspect_returns_attributes_with_env_redacted(
     docker_client.networks.get = _inspectable(
         docker_client.calls,
         "networks",
-        "db-net",
         {
             "Name": "db-net",
             "Driver": "bridge",
@@ -958,7 +957,6 @@ async def test_volume_inspect_returns_attributes(server, docker_client):
     docker_client.volumes.get = _inspectable(
         docker_client.calls,
         "volumes",
-        "pgdata",
         {
             "Name": "pgdata",
             "Driver": "local",
