@@ -1231,3 +1231,16 @@ async def test_events_list_reports_cli_errors(server, docker_cli):
         result = await client.call_tool("events_list", {})
     assert result.is_error
     assert "boom" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_events_list_includes_events_from_the_current_second(
+    server, docker_cli, monkeypatch
+):
+    monkeypatch.setattr(server_module.time, "time", lambda: 1000.75)
+    docker_cli.responses.append(FakeProcess(stdout=""))
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool("events_list", {"window_seconds": 10})
+    command = docker_cli.calls[-1]
+    assert command[5] == "991"
+    assert command[7] == "1001"

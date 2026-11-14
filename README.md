@@ -264,7 +264,8 @@ loops) for a window that always ends *now*, so a call can never wait for future
 events:
 
 - `window_seconds` (default `900`, clamped to `1..86400`) is how far back to
-  look. There is no `until` parameter on purpose.
+  look. There is no `until` parameter on purpose. The window end is rounded up
+  to the next full second, so events from the current second are included.
 - `limit` (default `100`, clamped to `1..1000`) keeps the **newest** events and
   sets `truncated=true` when the window holds more.
 - `filters` accepts `type`, `event`, `container`, `image` and `label`, each a

@@ -954,7 +954,10 @@ def events_list(
 ) -> dict[str, Any]:
     window = _clamp(window_seconds, _EVENTS_WINDOW_LIMITS)
     maximum = _clamp(limit, _EVENTS_LIMIT_LIMITS)
-    until = int(time.time())
+    # Round the window end up: `--until` compares with sub-second precision on
+    # the daemon side, so truncating to the current second drops events from the
+    # last partial second. The extra wait is below one second.
+    until = int(time.time()) + 1
     since = until - window
     args = [
         "events",
