@@ -96,6 +96,24 @@ class Docker:
     def close(self):
         self.closed = True
 
+    def version(self):
+        self.calls.append(("version", None))
+        return {"Version": "29.9.3", "ApiVersion": "1.52"}
+
+    def info(self):
+        self.calls.append(("info", None))
+        return {
+            "ServerVersion": "29.9.3",
+            "Driver": "overlay2",
+            "DriverStatus": [["Backing Filesystem", "extfs"]],
+            "NCPU": 8,
+            "MemTotal": 16_000_000_000,
+            "Containers": 3,
+            "Images": 5,
+            "HttpProxy": "http://user:secret@proxy",
+            "RegistryConfig": {"IndexConfigs": {}},
+        }
+
     def call(self, name: str) -> Any:
         return next(value for key, value in reversed(self.calls) if key == name)
 
@@ -542,12 +560,35 @@ async def test_container_processes_calls_docker_top(server, docker_client):
 
 
 @pytest.mark.anyio
+async def test_version_and_curated_system_info(server, docker_client):
+    async with Client(server, raise_exceptions=True) as client:
+        version = await client.call_tool("version", {})
+        assert version.structured_content == {
+            "Version": "29.9.3",
+            "ApiVersion": "1.52",
+        }
+
+        info = await client.call_tool("system_info", {})
+        assert info.structured_content == {
+            "ServerVersion": "29.9.3",
+            "Driver": "overlay2",
+            "DriverStatus": [["Backing Filesystem", "extfs"]],
+            "NCPU": 8,
+            "MemTotal": 16_000_000_000,
+            "Containers": 3,
+            "Images": 5,
+        }
+        assert "HttpProxy" not in info.structured_content
+        assert "RegistryConfig" not in info.structured_content
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 29
+        assert len(tools.tools) == 31
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "buildx_list"
         )
@@ -562,6 +603,11 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
+        for name in ("version", "system_info"):
+            tool = next(tool for tool in tools.tools if tool.name == name)
+            assert tool.annotations.read_only_hint
+            assert tool.annotations.idempotent_hint
+            assert tool.annotations.open_world_hint is False
         for name in ("container_inspect", "container_processes"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
