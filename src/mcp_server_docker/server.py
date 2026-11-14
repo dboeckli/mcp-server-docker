@@ -296,15 +296,18 @@ def container_logs(container_id: str, ctx: Context) -> str:
     return container.logs(tail=100).decode("utf-8")
 
 
+def _one_shot_stats(client: docker.DockerClient, container_id: str) -> dict[str, Any]:
+    return client.containers.get(container_id).stats(stream=False)
+
+
 @app.resource(
     "docker://containers/{container_id}/stats",
     name="Container stats",
     description="Live resource usage stats for a container",
     mime_type="application/json",
 )
-def container_stats(container_id: str, ctx: Context) -> dict[str, Any]:
-    container = ctx.request_context.lifespan_context.docker.containers.get(container_id)
-    return container.stats(stream=False)
+def container_stats_resource(container_id: str, ctx: Context) -> dict[str, Any]:
+    return _one_shot_stats(ctx.request_context.lifespan_context.docker, container_id)
 
 
 @tool(
@@ -580,6 +583,21 @@ def container_processes(
     container_id: ContainerID,
 ) -> dict[str, Any]:
     return _client(ctx).containers.get(container_id).top()
+
+
+@tool(
+    description=(
+        "Show a one-shot CPU, memory, network and block-IO snapshot for a container"
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def container_stats(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+) -> dict[str, Any]:
+    return _one_shot_stats(_client(ctx), container_id)
 
 
 @tool(
