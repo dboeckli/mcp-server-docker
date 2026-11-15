@@ -25,7 +25,8 @@ An MCP server for managing Docker with natural language!
 
 ## 🍴 What this fork adds
 
-- Buildx tools: `buildx_list`, `buildx_history`, and `buildx_logs`
+- Buildx tools: `docker_buildx_list`, `docker_buildx_history`, and
+  `docker_buildx_logs`
 - Clear tool error messages, including Docker and Buildx failures
 - A published container image: `ghcr.io/dboeckli/mcp-server-docker`
 - A published PyPI package: `mcp-server-docker-dboeckli`
@@ -45,8 +46,9 @@ example
   example the `sbx` MCP gateway).
 - The sandbox reaches the gateway over MCP and only sees the tools the gateway
   allows.
-- Read-only tools (`list_*`, `fetch_container_logs`, `buildx_*`) can be
-  allow-listed; write tools should stay behind `ask` or be denied.
+- Read-only tools (`docker_list_*`, `docker_fetch_container_logs`,
+  `docker_buildx_*`) can be allow-listed; write tools should stay behind `ask`
+  or be denied.
 - The Buildx tools added by this fork are meant for this setup: inspecting
   builders, build history and build logs from inside the sandbox.
 
@@ -87,7 +89,7 @@ Then add the following to your MCP servers file:
     "command": "uvx",
     "args": [
       "--from",
-      "mcp-server-docker-dboeckli==0.7.0",
+      "mcp-server-docker-dboeckli==0.8.0",
       "mcp-server-docker"
     ]
   }
@@ -103,7 +105,7 @@ Every release attaches the built wheel and sdist. This works without PyPI and
 without cloning the repository:
 
 ```bash
-uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.7.0/mcp_server_docker_dboeckli-0.7.0-py3-none-any.whl \
+uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.8.0/mcp_server_docker_dboeckli-0.8.0-py3-none-any.whl \
   mcp-server-docker
 ```
 
@@ -122,7 +124,7 @@ PyPI or wheel install.
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.7.0",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.8.0",
       "mcp-server-docker"
     ]
   }
@@ -140,13 +142,13 @@ image is published to GHCR:
 ```bash
 docker run -i --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/dboeckli/mcp-server-docker:0.7.0
+  ghcr.io/dboeckli/mcp-server-docker:0.8.0
 ```
 
 Alternatively, build the image locally:
 
 ```bash
-docker build -t mcp-server-docker:0.7.0 .
+docker build -t mcp-server-docker:0.8.0 .
 ```
 
 And then add the following to your MCP servers file:
@@ -161,7 +163,7 @@ And then add the following to your MCP servers file:
       "--rm",
       "-v",
       "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/dboeckli/mcp-server-docker:0.7.0"
+      "ghcr.io/dboeckli/mcp-server-docker:0.8.0"
     ]
   }
 }
@@ -185,52 +187,60 @@ Read either URI with a Docker container ID or name.
 
 ## 🔨 Tools
 
+> **Breaking in 0.8.0:** every tool name is prefixed with `docker_` so the flat
+> MCP gateway namespace stays collision-free (for example `list_containers` is
+> now `docker_list_containers`). Update gateway allow-lists and prompts that
+> name tools directly. Resource URIs and the `docker_compose` prompt are
+> unchanged.
+
 ### Containers
 
-- `list_containers`
-- `create_container`
-- `run_container`
-- `recreate_container`
-- `start_container`
-- `fetch_container_logs`
-- `stop_container`
-- `remove_container`
-- `container_inspect`
-- `container_health`
-- `container_processes`
-- `container_stats`
+- `docker_list_containers`
+- `docker_create_container`
+- `docker_run_container`
+- `docker_recreate_container`
+- `docker_start_container`
+- `docker_fetch_container_logs`
+- `docker_stop_container`
+- `docker_remove_container`
+- `docker_container_inspect`
+- `docker_container_health`
+- `docker_container_processes`
+- `docker_container_stats`
 
-`container_inspect` redacts environment values like `image_inspect`.
-`container_health` returns a compact summary instead of the full inspect
+`docker_container_inspect` redacts environment values like
+`docker_image_inspect`. `docker_container_health` returns a compact summary
+instead of the full inspect
 payload: state, health status with the last health log entry, restart count,
 exit code, `OOMKilled`, start/finish timestamps, image and command. It builds a
 fresh response, so no environment value is included.
-`container_processes` is the equivalent of `docker top`. `container_stats`
-returns a one-shot CPU, memory, network and block-IO snapshot (`stream=false`),
-so it never blocks a tool call; the `docker://containers/{container_id}/stats`
+`docker_container_processes` is the equivalent of `docker top`.
+`docker_container_stats` returns a one-shot CPU, memory, network and block-IO
+snapshot (`stream=false`), so it never blocks a tool call; the
+`docker://containers/{container_id}/stats`
 resource stays available for clients that read resources.
 
 ### Images
 
-- `list_images`
-- `pull_image`
-- `push_image`
-- `build_image`
-- `remove_image`
-- `image_inspect`
-- `image_history`
+- `docker_list_images`
+- `docker_pull_image`
+- `docker_push_image`
+- `docker_build_image`
+- `docker_remove_image`
+- `docker_image_inspect`
+- `docker_image_history`
 
-`image_inspect` replaces environment values with `<redacted>`. `image_history`
-is not redacted: layer `CreatedBy` commands can contain secrets baked into the
-image.
+`docker_image_inspect` replaces environment values with `<redacted>`.
+`docker_image_history` is not redacted: layer `CreatedBy` commands can contain
+secrets baked into the image.
 
 ### Buildx
 
-- `buildx_list`
-- `buildx_du`
-- `buildx_inspect`
-- `buildx_history`
-- `buildx_logs`
+- `docker_buildx_list`
+- `docker_buildx_du`
+- `docker_buildx_inspect`
+- `docker_buildx_history`
+- `docker_buildx_logs`
 
 These tools invoke the `docker` CLI, so the `docker` binary (with the Buildx
 plugin) must be available on `PATH`. The container image built from this
@@ -241,26 +251,27 @@ CLI output is decoded as UTF-8 with malformed bytes replaced by `�` (U+FFFD),
 independent of the host code page, so build logs with non-UTF-8 bytes cannot
 crash a tool on Windows.
 
-`buildx_logs` accepts `progress="plain"` and `progress="rawjson"`. The
+`docker_buildx_logs` accepts `progress="plain"` and `progress="rawjson"`. The
 `tty` mode needs a terminal, which a stdio MCP server never has, so the tool
 rejects it with an explanatory error instead of calling the CLI.
 
 ### System
 
-- `system_df`
-- `version`
-- `system_info`
+- `docker_system_df`
+- `docker_version`
+- `docker_system_info`
 
-`system_df` uses the `docker` CLI and reports the same summary as
+`docker_system_df` uses the `docker` CLI and reports the same summary as
 `docker system df`, including reclaimable space. Pass `verbose=true` for the
 per-image, per-container, per-volume, and build-cache detail.
 
 ### Events
 
-- `events_list`
+- `docker_events_list`
 
-`events_list` reports recent Docker events (`die`, `oom`, `unhealthy`, restart
-loops) for a window that always ends *now*, so a call can never wait for future
+`docker_events_list` reports recent Docker events (`die`, `oom`, `unhealthy`,
+restart loops) for a window that always ends *now*, so a call can never wait
+for future
 events:
 
 - `window_seconds` (default `900`, clamped to `1..86400`) is how far back to
@@ -274,32 +285,32 @@ events:
   time, the events collected so far are returned with `truncated=true` and
   `truncated_reason="timeout"` instead of a generic timeout error.
 
-Like the Buildx tools, `events_list` invokes the `docker` CLI and needs it on
-`PATH`.
+Like the Buildx tools, `docker_events_list` invokes the `docker` CLI and needs
+it on `PATH`.
 
 ### Networks
 
-- `list_networks`
-- `network_inspect`
-- `create_network`
-- `remove_network`
+- `docker_list_networks`
+- `docker_network_inspect`
+- `docker_create_network`
+- `docker_remove_network`
 
-`network_inspect` returns the full network attributes, including driver, IPAM
-configuration and connected containers.
+`docker_network_inspect` returns the full network attributes, including driver,
+IPAM configuration and connected containers.
 
 ### Volumes
 
-- `list_volumes`
-- `volume_inspect`
-- `create_volume`
-- `remove_volume`
+- `docker_list_volumes`
+- `docker_volume_inspect`
+- `docker_create_volume`
+- `docker_remove_volume`
 
-`volume_inspect` returns the full volume attributes, including driver,
+`docker_volume_inspect` returns the full volume attributes, including driver,
 mountpoint, labels and options.
 
 Both inspect tools apply the same environment redaction as
-`container_inspect` (`<redacted>`), so the reading posture stays uniform even if
-the daemon adds a `Config.Env` section.
+`docker_container_inspect` (`<redacted>`), so the reading posture stays uniform
+even if the daemon adds a `Config.Env` section.
 
 ## 📝 Prompts
 
@@ -320,9 +331,9 @@ Start the server with `--read-only`, or set
 they are absent from `tools/list` and calls to them return `Unknown tool`.
 
 - Default: all 36 tools.
-- Read-only: the 22 read-only tools, including all `list_*`, log, stats,
-  inspect, `container_health`, `events_list`, disk-usage, and Buildx inspection
-  tools.
+- Read-only: the 22 read-only tools, including all `docker_list_*`, log, stats,
+  inspect, `docker_container_health`, `docker_events_list`, disk-usage, and
+  Buildx inspection tools.
 - The container log/stats resources and the `docker_compose` prompt remain
   available.
 
@@ -331,7 +342,7 @@ Example with `uvx`:
 ```json
 "args": [
   "--from",
-  "git+https://github.com/dboeckli/mcp-server-docker@v0.7.0",
+  "git+https://github.com/dboeckli/mcp-server-docker@v0.8.0",
   "mcp-server-docker",
   "--read-only"
 ]
@@ -392,7 +403,7 @@ Simply set a `ssh://` host URL in the MCP server definition:
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.7.0",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.8.0",
       "mcp-server-docker"
     ],
     "env": {

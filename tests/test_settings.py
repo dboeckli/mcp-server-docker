@@ -32,17 +32,17 @@ def test_cli_flag_and_env_are_ored():
 
 def test_default_mode_enables_every_tool():
     settings = ServerSettings()
-    assert is_tool_enabled("create_container", ToolAnnotations(), settings)
-    assert is_tool_enabled("create_container", None, settings)
+    assert is_tool_enabled("docker_create_container", ToolAnnotations(), settings)
+    assert is_tool_enabled("docker_create_container", None, settings)
 
 
 def test_read_only_hides_write_and_unannotated_tools():
     settings = ServerSettings(read_only=True)
     assert is_tool_enabled(
-        "list_containers", ToolAnnotations(read_only_hint=True), settings
+        "docker_list_containers", ToolAnnotations(read_only_hint=True), settings
     )
     assert not is_tool_enabled(
-        "create_container", ToolAnnotations(read_only_hint=False), settings
+        "docker_create_container", ToolAnnotations(read_only_hint=False), settings
     )
-    assert not is_tool_enabled("create_container", ToolAnnotations(), settings)
-    assert not is_tool_enabled("create_container", None, settings)
+    assert not is_tool_enabled("docker_create_container", ToolAnnotations(), settings)
+    assert not is_tool_enabled("docker_create_container", None, settings)

@@ -306,8 +306,8 @@ IMPORTANT: maintain brevvity throughout your responses, unless instructed to be 
 
 The following are guidelines for you to follow when interacting with Docker Tools:
 
-- Always prefer `run_container` for starting a container, instead of `create_container`+`start_container`.
-- Always prefer `recreate_container` for updating a container, instead of `stop_container`+`remove_container`+`run_container`.
+- Always prefer `docker_run_container` for starting a container, instead of `docker_create_container`+`docker_start_container`.
+- Always prefer `docker_recreate_container` for updating a container, instead of `docker_stop_container`+`docker_remove_container`+`docker_run_container`.
 """
 
 
@@ -342,7 +342,7 @@ def container_stats_resource(container_id: str, ctx: Context) -> dict[str, Any]:
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def list_containers(
+def docker_list_containers(
     ctx: Context[AppContext],
     all: Annotated[
         bool, Field(description="Show all containers (default shows just running)")
@@ -365,7 +365,7 @@ def list_containers(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def create_container(
+def docker_create_container(
     ctx: Context[AppContext],
     image: ImageName,
     detach: Annotated[
@@ -417,12 +417,12 @@ def create_container(
 
 
 @tool(
-    description="Run an image in a new Docker container (preferred over `create_container` + `start_container`)",
+    description="Run an image in a new Docker container (preferred over `docker_create_container` + `docker_start_container`)",
     annotations=ToolAnnotations(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def run_container(
+def docker_run_container(
     ctx: Context[AppContext],
     image: ImageName,
     detach: Annotated[
@@ -479,7 +479,7 @@ def run_container(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def recreate_container(
+def docker_recreate_container(
     ctx: Context[AppContext],
     image: ImageName,
     container_id: ContainerID | None = None,
@@ -524,7 +524,7 @@ def recreate_container(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def start_container(
+def docker_start_container(
     ctx: Context[AppContext], container_id: ContainerID
 ) -> dict[str, Any]:
     container = _client(ctx).containers.get(container_id)
@@ -538,7 +538,7 @@ def start_container(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def fetch_container_logs(
+def docker_fetch_container_logs(
     ctx: Context[AppContext],
     container_id: ContainerID,
     tail: Annotated[
@@ -559,7 +559,7 @@ def fetch_container_logs(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def stop_container(
+def docker_stop_container(
     ctx: Context[AppContext], container_id: ContainerID
 ) -> dict[str, Any]:
     container = _client(ctx).containers.get(container_id)
@@ -573,7 +573,7 @@ def stop_container(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def remove_container(
+def docker_remove_container(
     ctx: Context[AppContext],
     container_id: ContainerID,
     force: Annotated[bool, Field(description="Force remove the container")] = False,
@@ -589,7 +589,7 @@ def remove_container(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def container_inspect(
+def docker_container_inspect(
     ctx: Context[AppContext],
     container_id: ContainerID,
 ) -> dict[str, Any]:
@@ -608,7 +608,7 @@ _HEALTH_LOG_OUTPUT_LIMIT = 1000
         read_only_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def container_health(
+def docker_container_health(
     ctx: Context[AppContext],
     container_id: ContainerID,
 ) -> dict[str, Any]:
@@ -661,7 +661,7 @@ def container_health(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def container_processes(
+def docker_container_processes(
     ctx: Context[AppContext],
     container_id: ContainerID,
 ) -> dict[str, Any]:
@@ -676,7 +676,7 @@ def container_processes(
         read_only_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def container_stats(
+def docker_container_stats(
     ctx: Context[AppContext],
     container_id: ContainerID,
 ) -> dict[str, Any]:
@@ -689,7 +689,7 @@ def container_stats(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def list_images(
+def docker_list_images(
     ctx: Context[AppContext],
     name: Annotated[
         str | None, Field(description="Filter images by repository name")
@@ -715,7 +715,7 @@ def list_images(
         destructive_hint=False, idempotent_hint=False, open_world_hint=True
     ),
 )
-def pull_image(
+def docker_pull_image(
     ctx: Context[AppContext],
     repository: Annotated[str, Field(description="Image repository")],
     tag: Annotated[str | None, Field(description="Image tag")] = "latest",
@@ -729,7 +729,7 @@ def pull_image(
         destructive_hint=False, idempotent_hint=False, open_world_hint=True
     ),
 )
-def push_image(
+def docker_push_image(
     ctx: Context[AppContext],
     repository: Annotated[str, Field(description="Image repository")],
     tag: Annotated[str | None, Field(description="Image tag")] = "latest",
@@ -744,7 +744,7 @@ def push_image(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def build_image(
+def docker_build_image(
     ctx: Context[AppContext],
     path: Annotated[str, Field(description="Path to build context")],
     tag: Annotated[str, Field(description="Image tag")],
@@ -760,7 +760,7 @@ def build_image(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def remove_image(
+def docker_remove_image(
     ctx: Context[AppContext],
     image: Annotated[str, Field(description="Image ID or name")],
     force: Annotated[bool, Field(description="Force remove the image")] = False,
@@ -775,7 +775,7 @@ def remove_image(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def image_inspect(
+def docker_image_inspect(
     ctx: Context[AppContext],
     image: Annotated[str, Field(description="Image ID or name")],
 ) -> dict[str, Any]:
@@ -788,7 +788,7 @@ def image_inspect(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def image_history(
+def docker_image_history(
     ctx: Context[AppContext],
     image: Annotated[str, Field(description="Image ID or name")],
 ) -> list[dict[str, Any]]:
@@ -801,7 +801,7 @@ def image_history(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def buildx_list() -> list[dict[str, Any]]:
+def docker_buildx_list() -> list[dict[str, Any]]:
     return _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
 
 
@@ -811,7 +811,7 @@ def buildx_list() -> list[dict[str, Any]]:
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def buildx_du(
+def docker_buildx_du(
     builder: Annotated[
         str | None, Field(description="Builder instance to query")
     ] = None,
@@ -851,7 +851,7 @@ def buildx_du(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def buildx_inspect(
+def docker_buildx_inspect(
     builder: Annotated[
         str | None, Field(description="Builder instance to inspect")
     ] = None,
@@ -868,7 +868,7 @@ def buildx_inspect(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def buildx_history(
+def docker_buildx_history(
     builder: Annotated[
         str | None, Field(description="Builder instance to query")
     ] = None,
@@ -885,7 +885,7 @@ def buildx_history(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def buildx_logs(
+def docker_buildx_logs(
     ref: Annotated[str, Field(description="Build record reference or build ID")],
     builder: Annotated[
         str | None, Field(description="Builder instance to query")
@@ -911,7 +911,7 @@ def buildx_logs(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def system_df(
+def docker_system_df(
     verbose: Annotated[
         bool, Field(description="Include detailed per-object usage")
     ] = False,
@@ -941,7 +941,7 @@ def _clamp(value: int, bounds: tuple[int, int]) -> int:
         read_only_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def events_list(
+def docker_events_list(
     window_seconds: Annotated[
         int, Field(description="How far back to look, in seconds (1-86400)")
     ] = 900,
@@ -1002,7 +1002,7 @@ def events_list(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def list_networks(
+def docker_list_networks(
     ctx: Context[AppContext],
     filters: Annotated[
         ListNetworksFilter | None, Field(description="Filter networks")
@@ -1022,7 +1022,7 @@ def list_networks(
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def create_network(
+def docker_create_network(
     ctx: Context[AppContext],
     name: Annotated[str, Field(description="Network name")],
     driver: Annotated[str | None, Field(description="Network driver")] = "bridge",
@@ -1044,7 +1044,7 @@ def create_network(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def remove_network(
+def docker_remove_network(
     ctx: Context[AppContext],
     network_id: Annotated[str, Field(description="Network ID or name")],
 ) -> dict[str, Any]:
@@ -1059,7 +1059,7 @@ def remove_network(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def network_inspect(
+def docker_network_inspect(
     ctx: Context[AppContext],
     network_id: Annotated[str, Field(description="Network ID or name")],
 ) -> dict[str, Any]:
@@ -1072,7 +1072,7 @@ def network_inspect(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def list_volumes(ctx: Context[AppContext]) -> list[dict[str, Any]]:
+def docker_list_volumes(ctx: Context[AppContext]) -> list[dict[str, Any]]:
     return [docker_to_dict(volume) for volume in _client(ctx).volumes.list()]
 
 
@@ -1082,7 +1082,7 @@ def list_volumes(ctx: Context[AppContext]) -> list[dict[str, Any]]:
         destructive_hint=False, idempotent_hint=False, open_world_hint=False
     ),
 )
-def create_volume(
+def docker_create_volume(
     ctx: Context[AppContext],
     name: Annotated[str, Field(description="Volume name")],
     driver: Annotated[str | None, Field(description="Volume driver")] = "local",
@@ -1099,7 +1099,7 @@ def create_volume(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
-def remove_volume(
+def docker_remove_volume(
     ctx: Context[AppContext],
     volume_name: Annotated[str, Field(description="Volume name")],
     force: Annotated[bool, Field(description="Force remove the volume")] = False,
@@ -1115,7 +1115,7 @@ def remove_volume(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def volume_inspect(
+def docker_volume_inspect(
     ctx: Context[AppContext],
     volume_name: Annotated[str, Field(description="Volume name")],
 ) -> dict[str, Any]:
@@ -1151,7 +1151,7 @@ _SYSTEM_INFO_KEYS = (
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def version(ctx: Context[AppContext]) -> dict[str, Any]:
+def docker_version(ctx: Context[AppContext]) -> dict[str, Any]:
     return _client(ctx).version()
 
 
@@ -1161,6 +1161,6 @@ def version(ctx: Context[AppContext]) -> dict[str, Any]:
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def system_info(ctx: Context[AppContext]) -> dict[str, Any]:
+def docker_system_info(ctx: Context[AppContext]) -> dict[str, Any]:
     info = _client(ctx).info()
     return {key: info[key] for key in _SYSTEM_INFO_KEYS if key in info}
