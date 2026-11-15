@@ -197,24 +197,24 @@ def test_run_docker_replaces_undecodable_bytes_in_errors(monkeypatch):
 async def test_buildx_list_parses_json_and_json_lines(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
         docker_cli.responses.append(FakeProcess(stdout='[{"name": "a"}]'))
-        result = await client.call_tool("buildx_list", {})
+        result = await client.call_tool("docker_buildx_list", {})
         assert result.structured_content == {"result": [{"name": "a"}]}
         assert docker_cli.calls[-1][1:] == ["buildx", "ls", "--format", "json"]
 
         docker_cli.responses.append(
             FakeProcess(stdout='{"name": "a"}\n{"name": "b"}\n')
         )
-        result = await client.call_tool("buildx_list", {})
+        result = await client.call_tool("docker_buildx_list", {})
         assert result.structured_content == {"result": [{"name": "a"}, {"name": "b"}]}
 
         docker_cli.responses.append(FakeProcess(stdout=""))
-        result = await client.call_tool("buildx_list", {})
+        result = await client.call_tool("docker_buildx_list", {})
         assert result.structured_content == {"result": []}
 
         docker_cli.responses.append(
             FakeProcess(stdout="", stderr="boom\n", returncode=1)
         )
-        result = await client.call_tool("buildx_list", {})
+        result = await client.call_tool("docker_buildx_list", {})
         assert result.is_error
         assert "boom" in result.content[0].text
 
@@ -223,7 +223,7 @@ async def test_buildx_list_parses_json_and_json_lines(server, docker_cli):
 async def test_buildx_reports_missing_docker_cli(server, monkeypatch):
     monkeypatch.setattr(server_module.shutil, "which", lambda _name: None)
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("buildx_list", {})
+        result = await client.call_tool("docker_buildx_list", {})
     assert result.is_error
     assert "docker CLI not found" in result.content[0].text
 
@@ -232,7 +232,7 @@ async def test_buildx_reports_missing_docker_cli(server, monkeypatch):
 async def test_buildx_history_calls_buildx_with_optional_builder(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
         docker_cli.responses.append(FakeProcess(stdout='[{"name": "build-1"}]'))
-        result = await client.call_tool("buildx_history", {})
+        result = await client.call_tool("docker_buildx_history", {})
         assert result.structured_content == {"result": [{"name": "build-1"}]}
         assert docker_cli.calls[-1][1:] == [
             "buildx",
@@ -243,7 +243,7 @@ async def test_buildx_history_calls_buildx_with_optional_builder(server, docker_
         ]
 
         docker_cli.responses.append(FakeProcess(stdout=""))
-        result = await client.call_tool("buildx_history", {"builder": "sbx"})
+        result = await client.call_tool("docker_buildx_history", {"builder": "sbx"})
         assert result.structured_content == {"result": []}
         assert docker_cli.calls[-1][1:] == [
             "buildx",
@@ -260,7 +260,7 @@ async def test_buildx_history_calls_buildx_with_optional_builder(server, docker_
 async def test_buildx_logs_returns_text_and_passes_options(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
         docker_cli.responses.append(FakeProcess(stdout="step 1\nstep 2\n"))
-        result = await client.call_tool("buildx_logs", {"ref": "abc"})
+        result = await client.call_tool("docker_buildx_logs", {"ref": "abc"})
         assert result.content[0].text == "step 1\nstep 2\n"
         assert docker_cli.calls[-1][1:] == [
             "buildx",
@@ -273,7 +273,7 @@ async def test_buildx_logs_returns_text_and_passes_options(server, docker_cli):
 
         docker_cli.responses.append(FakeProcess(stdout="trace\n"))
         result = await client.call_tool(
-            "buildx_logs",
+            "docker_buildx_logs",
             {"ref": "abc", "builder": "sbx", "progress": "rawjson"},
         )
         assert result.content[0].text == "trace\n"
@@ -294,7 +294,7 @@ async def test_buildx_logs_uses_build_id_from_full_ref(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
         docker_cli.responses.append(FakeProcess(stdout="step 1\n"))
         result = await client.call_tool(
-            "buildx_logs",
+            "docker_buildx_logs",
             {"ref": "sbx-opencode-v3/sbx-opencode-v30/qja8gbqjwyxk5kia5isg62w1p"},
         )
         assert result.content[0].text == "step 1\n"
@@ -312,7 +312,7 @@ async def test_buildx_logs_uses_build_id_from_full_ref(server, docker_cli):
 async def test_buildx_logs_returns_stderr_output(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
         docker_cli.responses.append(FakeProcess(stdout="", stderr="step 1\nstep 2\n"))
-        result = await client.call_tool("buildx_logs", {"ref": "abc"})
+        result = await client.call_tool("docker_buildx_logs", {"ref": "abc"})
         assert result.content[0].text == "step 1\nstep 2\n"
         assert docker_cli.kwargs[-1]["stdout"] is subprocess.PIPE
         assert docker_cli.kwargs[-1]["stderr"] is subprocess.STDOUT
@@ -324,7 +324,7 @@ async def test_buildx_logs_reports_unknown_ref(server, docker_cli):
         docker_cli.responses.append(
             FakeProcess(stdout="", stderr="no record found\n", returncode=1)
         )
-        result = await client.call_tool("buildx_logs", {"ref": "unknown"})
+        result = await client.call_tool("docker_buildx_logs", {"ref": "unknown"})
         assert result.is_error
         assert "no record found" in result.content[0].text
 
@@ -333,7 +333,7 @@ async def test_buildx_logs_reports_unknown_ref(server, docker_cli):
 async def test_buildx_logs_rejects_tty_progress(server, docker_cli):
     async with Client(server, raise_exceptions=True) as client:
         result = await client.call_tool(
-            "buildx_logs", {"ref": "abc", "progress": "tty"}
+            "docker_buildx_logs", {"ref": "abc", "progress": "tty"}
         )
     assert result.is_error
     message = result.content[0].text
@@ -359,7 +359,7 @@ async def test_buildx_du_reports_each_builder(server, docker_cli):
         docker_cli.responses.append(
             FakeProcess(stdout="Reclaimable:\t1kB\nTotal:\t1kB\n")
         )
-        result = await client.call_tool("buildx_du", {})
+        result = await client.call_tool("docker_buildx_du", {})
         assert result.structured_content == {
             "result": [
                 {
@@ -391,7 +391,7 @@ async def test_buildx_du_supports_single_builder_and_verbose(server, docker_cli)
         docker_cli.responses.append(FakeProcess(stdout="Total:\t5kB\n"))
         docker_cli.responses.append(FakeProcess(stdout='{"ID": "a", "Size": "5kB"}\n'))
         result = await client.call_tool(
-            "buildx_du", {"builder": "sbx", "verbose": True}
+            "docker_buildx_du", {"builder": "sbx", "verbose": True}
         )
         assert result.structured_content == {
             "result": [
@@ -427,7 +427,7 @@ async def test_buildx_du_keeps_other_builders_when_one_fails(server, docker_cli)
             FakeProcess(stdout="", stderr="builder not found\n", returncode=1)
         )
         docker_cli.responses.append(FakeProcess(stdout="Total:\t2kB\n"))
-        result = await client.call_tool("buildx_du", {})
+        result = await client.call_tool("docker_buildx_du", {})
         assert not result.is_error
         assert result.structured_content == {
             "result": [
@@ -448,7 +448,7 @@ async def test_buildx_du_keeps_other_builders_when_one_fails(server, docker_cli)
 async def test_system_df_reports_missing_docker_cli(server, monkeypatch):
     monkeypatch.setattr(server_module.shutil, "which", lambda _name: None)
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("system_df", {})
+        result = await client.call_tool("docker_system_df", {})
     assert result.is_error
     assert "docker CLI not found" in result.content[0].text
 
@@ -462,7 +462,7 @@ async def test_system_df_returns_summary_and_optional_detail(server, docker_cli)
                 '{"Type": "Containers", "Size": "0B"}\n'
             )
         )
-        result = await client.call_tool("system_df", {})
+        result = await client.call_tool("docker_system_df", {})
         assert result.structured_content == {
             "summary": [
                 {"Type": "Images", "Size": "0B"},
@@ -480,7 +480,7 @@ async def test_system_df_returns_summary_and_optional_detail(server, docker_cli)
                 '"Volumes": [], "BuildCache": []}'
             )
         )
-        result = await client.call_tool("system_df", {"verbose": True})
+        result = await client.call_tool("docker_system_df", {"verbose": True})
         assert result.structured_content == {
             "summary": [{"Type": "Images", "Size": "0B"}],
             "detail": {
@@ -518,12 +518,12 @@ async def test_image_inspect_redacts_env_and_image_history_returns_layers(
     )[1]
 
     async with Client(server, raise_exceptions=True) as client:
-        inspect = await client.call_tool("image_inspect", {"image": "alpine"})
+        inspect = await client.call_tool("docker_image_inspect", {"image": "alpine"})
         assert inspect.structured_content == {
             "Config": {"Env": ["SECRET=<redacted>"]},
             "ContainerConfig": {"Env": ["TOKEN=<redacted>"]},
         }
-        history = await client.call_tool("image_history", {"image": "alpine"})
+        history = await client.call_tool("docker_image_history", {"image": "alpine"})
         assert history.structured_content == {
             "result": [{"Id": "layer-1", "CreatedBy": "COPY hello.txt"}]
         }
@@ -536,14 +536,14 @@ async def test_buildx_inspect_returns_text_and_optional_builder(server, docker_c
         docker_cli.responses.append(
             FakeProcess(stdout="Name:   default\nDriver: docker\n")
         )
-        result = await client.call_tool("buildx_inspect", {})
+        result = await client.call_tool("docker_buildx_inspect", {})
         assert result.content[0].text == "Name:   default\nDriver: docker\n"
         assert docker_cli.calls[-1][1:] == ["buildx", "inspect"]
 
         docker_cli.responses.append(
             FakeProcess(stdout="Name:   sbx\nDriver: docker-container\n")
         )
-        result = await client.call_tool("buildx_inspect", {"builder": "sbx"})
+        result = await client.call_tool("docker_buildx_inspect", {"builder": "sbx"})
         assert result.content[0].text == "Name:   sbx\nDriver: docker-container\n"
         assert docker_cli.calls[-1][1:] == [
             "buildx",
@@ -568,7 +568,9 @@ async def test_container_inspect_redacts_env(server, docker_client):
     )[1]
 
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("container_inspect", {"container_id": "web"})
+        result = await client.call_tool(
+            "docker_container_inspect", {"container_id": "web"}
+        )
         assert result.structured_content == {
             "Config": {"Env": ["SECRET=<redacted>"]},
             "ContainerConfig": {"Env": ["TOKEN=<redacted>"]},
@@ -580,7 +582,9 @@ async def test_container_inspect_redacts_env(server, docker_client):
 @pytest.mark.anyio
 async def test_container_processes_calls_docker_top(server, docker_client):
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("container_processes", {"container_id": "web"})
+        result = await client.call_tool(
+            "docker_container_processes", {"container_id": "web"}
+        )
         assert result.structured_content == {
             "Titles": ["PID", "CMD"],
             "Processes": [["1", "nginx"]],
@@ -594,7 +598,9 @@ async def test_container_processes_calls_docker_top(server, docker_client):
 @pytest.mark.anyio
 async def test_container_stats_tool_returns_one_shot_snapshot(server, docker_client):
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("container_stats", {"container_id": "web"})
+        result = await client.call_tool(
+            "docker_container_stats", {"container_id": "web"}
+        )
         assert result.structured_content == {"cpu": 1}
         assert docker_client.calls[-2:] == [
             ("containers.get", "web"),
@@ -605,13 +611,13 @@ async def test_container_stats_tool_returns_one_shot_snapshot(server, docker_cli
 @pytest.mark.anyio
 async def test_version_and_curated_system_info(server, docker_client):
     async with Client(server, raise_exceptions=True) as client:
-        version = await client.call_tool("version", {})
+        version = await client.call_tool("docker_version", {})
         assert version.structured_content == {
             "Version": "29.9.3",
             "ApiVersion": "1.52",
         }
 
-        info = await client.call_tool("system_info", {})
+        info = await client.call_tool("docker_system_info", {})
         assert info.structured_content == {
             "ServerVersion": "29.9.3",
             "Driver": "overlay2",
@@ -633,47 +639,53 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         tools = await client.list_tools()
         assert len(tools.tools) == 36
         buildx_list_tool = next(
-            tool for tool in tools.tools if tool.name == "buildx_list"
+            tool for tool in tools.tools if tool.name == "docker_buildx_list"
         )
         assert buildx_list_tool.annotations.read_only_hint
         assert buildx_list_tool.annotations.idempotent_hint
         assert buildx_list_tool.annotations.open_world_hint is False
-        buildx_du_tool = next(tool for tool in tools.tools if tool.name == "buildx_du")
+        buildx_du_tool = next(
+            tool for tool in tools.tools if tool.name == "docker_buildx_du"
+        )
         assert buildx_du_tool.annotations.read_only_hint
         assert buildx_du_tool.annotations.idempotent_hint
         assert buildx_du_tool.annotations.open_world_hint is False
-        system_df_tool = next(tool for tool in tools.tools if tool.name == "system_df")
+        system_df_tool = next(
+            tool for tool in tools.tools if tool.name == "docker_system_df"
+        )
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
-        for name in ("version", "system_info"):
+        for name in ("docker_version", "docker_system_info"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
             assert tool.annotations.idempotent_hint
             assert tool.annotations.open_world_hint is False
-        for name in ("container_inspect", "container_processes"):
+        for name in ("docker_container_inspect", "docker_container_processes"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
             assert tool.annotations.idempotent_hint
             assert tool.annotations.open_world_hint is False
         stats_annotations = next(
-            tool for tool in tools.tools if tool.name == "container_stats"
+            tool for tool in tools.tools if tool.name == "docker_container_stats"
         ).annotations
         assert stats_annotations.read_only_hint
         assert stats_annotations.idempotent_hint is False
         assert stats_annotations.open_world_hint is False
         buildx_inspect_tool = next(
-            tool for tool in tools.tools if tool.name == "buildx_inspect"
+            tool for tool in tools.tools if tool.name == "docker_buildx_inspect"
         )
         assert buildx_inspect_tool.annotations.read_only_hint
         assert buildx_inspect_tool.annotations.idempotent_hint
         assert buildx_inspect_tool.annotations.open_world_hint is False
-        for name in ("image_inspect", "image_history"):
+        for name in ("docker_image_inspect", "docker_image_history"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
             assert tool.annotations.idempotent_hint
             assert tool.annotations.open_world_hint is False
-        create = next(tool for tool in tools.tools if tool.name == "create_container")
+        create = next(
+            tool for tool in tools.tools if tool.name == "docker_create_container"
+        )
         assert create.input_schema["required"] == ["image"]
         assert "ctx" not in create.input_schema["properties"]
         assert "input" not in create.input_schema["properties"]
@@ -682,32 +694,38 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
             == "Docker image name"
         )
         annotations = next(
-            tool for tool in tools.tools if tool.name == "list_containers"
+            tool for tool in tools.tools if tool.name == "docker_list_containers"
         ).annotations
         assert annotations.read_only_hint and annotations.idempotent_hint
         assert annotations.open_world_hint is False
-        remove = next(tool for tool in tools.tools if tool.name == "remove_container")
+        remove = next(
+            tool for tool in tools.tools if tool.name == "docker_remove_container"
+        )
         assert remove.annotations.destructive_hint
         assert remove.annotations.open_world_hint is False
 
-        await client.call_tool("list_containers", {})
+        await client.call_tool("docker_list_containers", {})
         assert docker_client.call("containers.list") == {"all": False, "filters": None}
         await client.call_tool(
-            "list_containers", {"all": True, "filters": {"label": ["a=b"]}}
+            "docker_list_containers", {"all": True, "filters": {"label": ["a=b"]}}
         )
         assert docker_client.call("containers.list") == {
             "all": True,
             "filters": {"label": ["a=b"]},
         }
         await client.call_tool(
-            "create_container",
+            "docker_create_container",
             {"image": "alpine", "name": "new", "environment": {"X": "1"}},
         )
         assert docker_client.call("containers.create")["image"] == "alpine"
         assert docker_client.call("containers.create")["environment"] == {"X": "1"}
-        await client.call_tool("run_container", {"image": "alpine", "detach": False})
+        await client.call_tool(
+            "docker_run_container", {"image": "alpine", "detach": False}
+        )
         assert docker_client.call("containers.run")["detach"] is False
-        await client.call_tool("recreate_container", {"image": "alpine", "name": "old"})
+        await client.call_tool(
+            "docker_recreate_container", {"image": "alpine", "name": "old"}
+        )
         assert docker_client.call("containers.get") == "old"
         assert [name for name, _ in docker_client.calls[-4:]] == [
             "containers.get",
@@ -719,37 +737,39 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert (
             "container_id" not in recreated and "resolved_container_id" not in recreated
         )
-        await client.call_tool("start_container", {"container_id": "x"})
+        await client.call_tool("docker_start_container", {"container_id": "x"})
         assert docker_client.calls[-2:] == [
             ("containers.get", "x"),
             ("object.start", None),
         ]
-        await client.call_tool("fetch_container_logs", {"container_id": "x"})
+        await client.call_tool("docker_fetch_container_logs", {"container_id": "x"})
         assert docker_client.call("object.logs") == {"tail": 100}
         await client.call_tool(
-            "fetch_container_logs", {"container_id": "x", "tail": "all"}
+            "docker_fetch_container_logs", {"container_id": "x", "tail": "all"}
         )
         assert docker_client.call("object.logs") == {"tail": "all"}
-        await client.call_tool("stop_container", {"container_id": "x"})
+        await client.call_tool("docker_stop_container", {"container_id": "x"})
         assert docker_client.calls[-2:] == [
             ("containers.get", "x"),
             ("object.stop", None),
         ]
-        await client.call_tool("remove_container", {"container_id": "x", "force": True})
+        await client.call_tool(
+            "docker_remove_container", {"container_id": "x", "force": True}
+        )
         assert docker_client.call("object.remove") == {"force": True}
 
 
 @pytest.mark.anyio
 async def test_image_network_and_volume_call_semantics(server, docker_client):
     async with Client(server, raise_exceptions=True) as client:
-        await client.call_tool("list_images", {})
+        await client.call_tool("docker_list_images", {})
         assert docker_client.call("images.list") == {
             "name": None,
             "all": False,
             "filters": None,
         }
         await client.call_tool(
-            "list_images",
+            "docker_list_images",
             {"name": "alpine", "all": True, "filters": {"dangling": True}},
         )
         assert docker_client.call("images.list") == {
@@ -757,12 +777,15 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
             "all": True,
             "filters": {"dangling": True, "label": None},
         }
-        await client.call_tool("pull_image", {"repository": "alpine", "tag": "3.20"})
+        await client.call_tool(
+            "docker_pull_image", {"repository": "alpine", "tag": "3.20"}
+        )
         assert docker_client.call("images.pull") == ("alpine", {"tag": "3.20"})
-        await client.call_tool("push_image", {"repository": "alpine"})
+        await client.call_tool("docker_push_image", {"repository": "alpine"})
         assert docker_client.call("images.push") == ("alpine", {"tag": "latest"})
         build = await client.call_tool(
-            "build_image", {"path": ".", "tag": "test", "dockerfile": "Dockerfile.test"}
+            "docker_build_image",
+            {"path": ".", "tag": "test", "dockerfile": "Dockerfile.test"},
         )
         assert build.structured_content["logs"] == [{"stream": "built"}]
         assert docker_client.call("images.build") == {
@@ -770,31 +793,33 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
             "tag": "test",
             "dockerfile": "Dockerfile.test",
         }
-        await client.call_tool("remove_image", {"image": "test", "force": True})
+        await client.call_tool("docker_remove_image", {"image": "test", "force": True})
         assert docker_client.call("images.remove") == {"image": "test", "force": True}
-        await client.call_tool("list_networks", {"filters": {"label": ["x=y"]}})
+        await client.call_tool("docker_list_networks", {"filters": {"label": ["x=y"]}})
         assert docker_client.call("networks.list") == {"filters": {"label": ["x=y"]}}
-        await client.call_tool("create_network", {"name": "n", "internal": True})
+        await client.call_tool("docker_create_network", {"name": "n", "internal": True})
         assert docker_client.call("networks.create") == {
             "name": "n",
             "driver": "bridge",
             "internal": True,
             "labels": None,
         }
-        await client.call_tool("remove_network", {"network_id": "n"})
+        await client.call_tool("docker_remove_network", {"network_id": "n"})
         assert docker_client.calls[-2:] == [
             ("networks.get", "n"),
             ("object.remove", {}),
         ]
-        await client.call_tool("list_volumes", {})
+        await client.call_tool("docker_list_volumes", {})
         assert docker_client.call("volumes.list") == {}
-        await client.call_tool("create_volume", {"name": "v"})
+        await client.call_tool("docker_create_volume", {"name": "v"})
         assert docker_client.call("volumes.create") == {
             "name": "v",
             "driver": "local",
             "labels": None,
         }
-        await client.call_tool("remove_volume", {"volume_name": "v", "force": True})
+        await client.call_tool(
+            "docker_remove_volume", {"volume_name": "v", "force": True}
+        )
         assert docker_client.call("object.remove") == {"force": True}
 
 
@@ -804,7 +829,9 @@ async def test_container_logs_replace_undecodable_bytes(
 ):
     monkeypatch.setattr(Object, "logs_payload", b"line\x90\n")
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("fetch_container_logs", {"container_id": "x"})
+        result = await client.call_tool(
+            "docker_fetch_container_logs", {"container_id": "x"}
+        )
         logs = (await client.read_resource("docker://containers/x/logs")).contents[0]
     assert result.structured_content == {"logs": ["line\ufffd", ""]}
     assert logs.text == "line\ufffd\n"
@@ -824,7 +851,7 @@ async def test_resources_prompt_validation_errors_and_lifetime(server, docker_cl
         assert stats.mime_type == "application/json"
         assert '"cpu": 1' in stats.text
         before = len(docker_client.calls)
-        assert (await client.call_tool("create_container", {})).is_error
+        assert (await client.call_tool("docker_create_container", {})).is_error
         assert len(docker_client.calls) == before
         prompts = await client.list_prompts()
         assert all(argument.required for argument in prompts.prompts[0].arguments)
@@ -845,7 +872,7 @@ async def test_docker_exception_is_a_model_visible_tool_error(server, docker_cli
 
     docker_client.containers.list = fail
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("list_containers", {})
+        result = await client.call_tool("docker_list_containers", {})
     assert result.is_error
     assert "daemon unavailable" in result.content[0].text
 
@@ -865,8 +892,8 @@ async def test_production_stdio_command_lists_all_tools():
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
     assert len(tools.tools) == 36
-    assert "list_containers" in {tool.name for tool in tools.tools}
-    assert "container_stats" in {tool.name for tool in tools.tools}
+    assert "docker_list_containers" in {tool.name for tool in tools.tools}
+    assert "docker_container_stats" in {tool.name for tool in tools.tools}
 
 
 @pytest.mark.anyio
@@ -880,20 +907,20 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
         tools = await client.list_tools()
         templates = await client.list_resource_templates()
         prompts = await client.list_prompts()
-        blocked = await client.call_tool("create_container", {"image": "alpine"})
+        blocked = await client.call_tool("docker_create_container", {"image": "alpine"})
 
     names = {tool.name for tool in tools.tools}
     assert len(names) == 22
     assert all(tool.annotations.read_only_hint for tool in tools.tools)
-    assert "create_container" not in names
+    assert "docker_create_container" not in names
     assert {
-        "network_inspect",
-        "volume_inspect",
-        "container_health",
-        "events_list",
+        "docker_network_inspect",
+        "docker_volume_inspect",
+        "docker_container_health",
+        "docker_events_list",
     } <= names
-    assert "buildx_du" in names
-    assert "container_stats" in names
+    assert "docker_buildx_du" in names
+    assert "docker_container_stats" in names
     assert {template.uri_template for template in templates.resource_templates} == {
         "docker://containers/{container_id}/logs",
         "docker://containers/{container_id}/stats",
@@ -912,8 +939,8 @@ async def test_production_stdio_read_only_cli_flag():
         tools = await client.list_tools()
     names = {tool.name for tool in tools.tools}
     assert len(names) == 22
-    assert "remove_container" not in names
-    assert "container_stats" in names
+    assert "docker_remove_container" not in names
+    assert "docker_container_stats" in names
 
 
 def _inspectable(calls, kind, attrs):
@@ -942,7 +969,9 @@ async def test_network_inspect_returns_attributes_with_env_redacted(
         },
     )
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("network_inspect", {"network_id": "db-net"})
+        result = await client.call_tool(
+            "docker_network_inspect", {"network_id": "db-net"}
+        )
     assert docker_client.calls[-1] == ("networks.get", "db-net")
     assert result.structured_content == {
         "Name": "db-net",
@@ -966,7 +995,9 @@ async def test_volume_inspect_returns_attributes(server, docker_client):
         },
     )
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("volume_inspect", {"volume_name": "pgdata"})
+        result = await client.call_tool(
+            "docker_volume_inspect", {"volume_name": "pgdata"}
+        )
     assert docker_client.calls[-1] == ("volumes.get", "pgdata")
     assert result.structured_content == {
         "Name": "pgdata",
@@ -984,7 +1015,9 @@ async def test_network_inspect_reports_unknown_network(server, docker_client):
 
     docker_client.networks.get = fail
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("network_inspect", {"network_id": "nope"})
+        result = await client.call_tool(
+            "docker_network_inspect", {"network_id": "nope"}
+        )
     assert result.is_error
     assert "no such network" in result.content[0].text
 
@@ -1038,7 +1071,9 @@ async def test_container_health_summarises_a_healthy_container(server, docker_cl
     )
     docker_client.containers.get = lambda _cid: container
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("container_health", {"container_id": "abc123"})
+        result = await client.call_tool(
+            "docker_container_health", {"container_id": "abc123"}
+        )
     payload = result.structured_content
     assert payload["id"] == "abc123"
     assert payload["name"] == "web"
@@ -1086,7 +1121,9 @@ async def test_container_health_reports_unhealthy_with_last_log(server, docker_c
     )
     docker_client.containers.get = lambda _cid: container
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("container_health", {"container_id": "abc123"})
+        result = await client.call_tool(
+            "docker_container_health", {"container_id": "abc123"}
+        )
     health = result.structured_content["health"]
     assert health["status"] == "unhealthy"
     assert health["failing_streak"] == 3
@@ -1117,7 +1154,9 @@ async def test_container_health_handles_non_running_container_without_health(
     )
     docker_client.containers.get = lambda _cid: container
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("container_health", {"container_id": "abc123"})
+        result = await client.call_tool(
+            "docker_container_health", {"container_id": "abc123"}
+        )
     payload = result.structured_content
     assert payload["status"] == "exited"
     assert payload["health"] is None
@@ -1143,7 +1182,7 @@ async def test_events_list_passes_bounded_window_and_filters(server, docker_cli)
     docker_cli.responses.append(FakeProcess(stdout=_events_stdout(EVENTS[:2])))
     async with Client(server, raise_exceptions=True) as client:
         result = await client.call_tool(
-            "events_list",
+            "docker_events_list",
             {
                 "window_seconds": 60,
                 "limit": 10,
@@ -1174,7 +1213,7 @@ async def test_events_list_passes_bounded_window_and_filters(server, docker_cli)
 async def test_events_list_defaults_to_a_bounded_window(server, docker_cli):
     docker_cli.responses.append(FakeProcess(stdout=""))
     async with Client(server, raise_exceptions=True) as client:
-        await client.call_tool("events_list", {})
+        await client.call_tool("docker_events_list", {})
     command = docker_cli.calls[-1]
     assert int(command[7]) - int(command[5]) == 900
     assert docker_cli.kwargs[-1]["timeout"] == 910
@@ -1184,7 +1223,7 @@ async def test_events_list_defaults_to_a_bounded_window(server, docker_cli):
 async def test_events_list_keeps_newest_events_and_flags_truncation(server, docker_cli):
     docker_cli.responses.append(FakeProcess(stdout=_events_stdout(EVENTS)))
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("events_list", {"limit": 2})
+        result = await client.call_tool("docker_events_list", {"limit": 2})
     payload = result.structured_content
     assert payload["events"] == EVENTS[1:]
     assert payload["count"] == 2
@@ -1195,7 +1234,7 @@ async def test_events_list_keeps_newest_events_and_flags_truncation(server, dock
 async def test_events_list_empty_window_is_not_an_error(server, docker_cli):
     docker_cli.responses.append(FakeProcess(stdout=""))
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("events_list", {"window_seconds": 1})
+        result = await client.call_tool("docker_events_list", {"window_seconds": 1})
     assert result.is_error is False
     assert result.structured_content["events"] == []
     assert result.structured_content["count"] == 0
@@ -1215,7 +1254,7 @@ async def test_events_list_returns_partial_events_on_cli_timeout(
 
     monkeypatch.setattr(server_module.subprocess, "run", timeout)
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("events_list", {})
+        result = await client.call_tool("docker_events_list", {})
     assert result.is_error is False
     assert result.structured_content["events"] == EVENTS[:1]
     assert result.structured_content["truncated"] is True
@@ -1226,7 +1265,7 @@ async def test_events_list_returns_partial_events_on_cli_timeout(
 async def test_events_list_reports_cli_errors(server, docker_cli):
     docker_cli.responses.append(FakeProcess(stdout="", stderr="boom\n", returncode=1))
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("events_list", {})
+        result = await client.call_tool("docker_events_list", {})
     assert result.is_error
     assert "boom" in result.content[0].text
 
@@ -1238,7 +1277,7 @@ async def test_events_list_includes_events_from_the_current_second(
     monkeypatch.setattr(server_module.time, "time", lambda: 1000.75)
     docker_cli.responses.append(FakeProcess(stdout=""))
     async with Client(server, raise_exceptions=True) as client:
-        await client.call_tool("events_list", {"window_seconds": 10})
+        await client.call_tool("docker_events_list", {"window_seconds": 10})
     command = docker_cli.calls[-1]
     assert command[5] == "991"
     assert command[7] == "1001"

@@ -29,7 +29,7 @@ def created_volume(docker_daemon):
 
 @pytest.mark.integration
 def test_events_list_reports_a_real_volume_event(created_volume):
-    result = server_module.events_list(
+    result = server_module.docker_events_list(
         window_seconds=60,
         filters=server_module.ListEventsFilters(type=["volume"], event=["create"]),
     )
@@ -43,7 +43,7 @@ def test_events_list_reports_a_real_volume_event(created_volume):
 
 @pytest.mark.integration
 def test_events_list_window_is_bounded_and_returns_promptly(created_volume):
-    result = server_module.events_list(window_seconds=1, limit=1)
+    result = server_module.docker_events_list(window_seconds=1, limit=1)
     assert result["until"] - result["since"] == 1
     assert result["count"] <= 1
     assert len(result["events"]) <= 1
@@ -52,7 +52,7 @@ def test_events_list_window_is_bounded_and_returns_promptly(created_volume):
 
 @pytest.mark.integration
 def test_events_list_survives_a_filter_with_no_matches(created_volume):
-    result = server_module.events_list(
+    result = server_module.docker_events_list(
         window_seconds=60,
         filters=server_module.ListEventsFilters(container=["does-not-exist"]),
     )

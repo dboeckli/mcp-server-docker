@@ -48,7 +48,7 @@ def build_record(buildx_history_ready, tmp_path):
     tag = f"mcp-server-docker-it:{unique}"
     build_id = None
     try:
-        before = {record["ref"] for record in server_module.buildx_history()}
+        before = {record["ref"] for record in server_module.docker_buildx_history()}
         build = subprocess.run(
             [
                 "docker",
@@ -68,7 +68,7 @@ def build_record(buildx_history_ready, tmp_path):
 
         new_records = [
             record
-            for record in server_module.buildx_history()
+            for record in server_module.docker_buildx_history()
             if record["ref"] not in before
         ]
         record = next((r for r in new_records if r.get("name") == context.name), None)
