@@ -824,6 +824,29 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
 
 
 @pytest.mark.anyio
+async def test_list_tools_return_one_json_array_block(server, docker_client):
+    objects = [Object(docker_client.calls), Object(docker_client.calls)]
+    docker_client.volumes.list = lambda **_kwargs: objects
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_list_volumes", {})
+
+    assert len(result.content) == 1
+    payload = [{"id": "object-id"}, {"id": "object-id"}]
+    assert json.loads(result.content[0].text) == payload
+    assert result.structured_content == {"result": payload}
+
+
+@pytest.mark.anyio
+async def test_list_tools_return_empty_array_block(server, docker_client):
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_list_volumes", {})
+
+    assert len(result.content) == 1
+    assert json.loads(result.content[0].text) == []
+    assert result.structured_content == {"result": []}
+
+
+@pytest.mark.anyio
 async def test_container_logs_replace_undecodable_bytes(
     server, docker_client, monkeypatch
 ):

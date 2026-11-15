@@ -220,6 +220,13 @@ snapshot (`stream=false`), so it never blocks a tool call; the
 `docker://containers/{container_id}/stats`
 resource stays available for clients that read resources.
 
+Every list tool returns a single JSON array. Note that `docker_list_containers`
+shows the same containers as `docker ps`: on Docker Desktop hosts with the
+Kubernetes integration enabled, the engine can omit containers created by
+Kubernetes from the container list while still reporting them in
+`docker_system_info`/`docker_system_df`. Resolving such a container by name
+(`docker_container_inspect`, `docker_container_health`) still works.
+
 ### Images
 
 - `docker_list_images`
@@ -264,6 +271,13 @@ rejects it with an explanatory error instead of calling the CLI.
 `docker_system_df` uses the `docker` CLI and reports the same summary as
 `docker system df`, including reclaimable space. Pass `verbose=true` for the
 per-image, per-container, per-volume, and build-cache detail.
+
+`docker_system_df` and `docker_system_info` take their numbers straight from
+the engine, while `docker_list_containers` mirrors `docker ps`. Some engines
+(Docker Desktop's Kubernetes integration, for example) count containers in
+`/info` and `/system/df` that their container list omits, so
+`system_info.ContainersRunning` can exceed the number of listed containers (and
+`system_df.Active`).
 
 ### Events
 
