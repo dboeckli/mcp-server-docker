@@ -15,7 +15,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field
 
 from mcp_server_docker._version import __version__
@@ -170,6 +170,22 @@ class ToolRuntimeError(ToolError, RuntimeError):
     """A tool failure whose message is safe to surface to the model."""
 
 
+def _json_list_result(items: list[Any]) -> CallToolResult:
+    """Return a list as one JSON array block instead of one block per element.
+
+    The MCP framework unrolls a list result into a text block per element, which
+    leaves clients with concatenated JSON objects instead of a single document.
+    Emitting one block keeps the array contract and also covers empty lists,
+    which would otherwise produce no content at all.
+    """
+    return CallToolResult(
+        content=[
+            TextContent(type="text", text=json.dumps(items, indent=2, default=str))
+        ],
+        structured_content={"result": items},
+    )
+
+
 def tool(
     *args: Any, **kwargs: Any
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -177,7 +193,8 @@ def tool(
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(fn)
-        def wrapper(*fn_args: Any, **fn_kwargs: Any) -> Any:
+        def call(*fn_args: Any, **fn_kwargs: Any) -> Any:
+            """Call the tool body, mapping failures to model-visible errors."""
             try:
                 return fn(*fn_args, **fn_kwargs)
             except (MCPError, ToolError):
@@ -185,10 +202,17 @@ def tool(
             except Exception as exc:
                 raise ToolRuntimeError(str(exc)) from exc
 
+        @wraps(fn)
+        def mcp_tool(*fn_args: Any, **fn_kwargs: Any) -> Any:
+            """Registered entry point: shapes list results for MCP clients."""
+            result = call(*fn_args, **fn_kwargs)
+            return _json_list_result(result) if isinstance(result, list) else result
+
         name = kwargs.get("name") or fn.__name__
-        if not is_tool_enabled(name, kwargs.get("annotations"), settings):
-            return wrapper
-        return app.tool(*args, **kwargs)(wrapper)
+        if is_tool_enabled(name, kwargs.get("annotations"), settings):
+            app.tool(*args, **kwargs)(mcp_tool)
+        # Direct callers keep the plain Python return value.
+        return call
 
     return decorator
 
@@ -337,7 +361,7 @@ def container_stats_resource(container_id: str, ctx: Context) -> dict[str, Any]:
 
 
 @tool(
-    description="List all Docker containers",
+    description="List all Docker containers (same container set as `docker ps`)",
     annotations=ToolAnnotations(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
