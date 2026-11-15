@@ -16,6 +16,9 @@ wheels/
 .coverage
 htmlcov/
 
+# Local review artifacts (diff patches opened in the IDE)
+target/
+
 # Superpowers planning artifacts
 .superpowers/
 docs/superpowers/
