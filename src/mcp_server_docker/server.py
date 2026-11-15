@@ -193,19 +193,26 @@ def tool(
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(fn)
-        def wrapper(*fn_args: Any, **fn_kwargs: Any) -> Any:
+        def call(*fn_args: Any, **fn_kwargs: Any) -> Any:
+            """Call the tool body, mapping failures to model-visible errors."""
             try:
-                result = fn(*fn_args, **fn_kwargs)
+                return fn(*fn_args, **fn_kwargs)
             except (MCPError, ToolError):
                 raise
             except Exception as exc:
                 raise ToolRuntimeError(str(exc)) from exc
+
+        @wraps(fn)
+        def mcp_tool(*fn_args: Any, **fn_kwargs: Any) -> Any:
+            """Registered entry point: shapes list results for MCP clients."""
+            result = call(*fn_args, **fn_kwargs)
             return _json_list_result(result) if isinstance(result, list) else result
 
         name = kwargs.get("name") or fn.__name__
-        if not is_tool_enabled(name, kwargs.get("annotations"), settings):
-            return wrapper
-        return app.tool(*args, **kwargs)(wrapper)
+        if is_tool_enabled(name, kwargs.get("annotations"), settings):
+            app.tool(*args, **kwargs)(mcp_tool)
+        # Direct callers keep the plain Python return value.
+        return call
 
     return decorator
 
