@@ -2,8 +2,8 @@
   "lockfile_version": "1",
   "packages": {
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
-      "last_modified": "2026-11-06T15:06:19Z",
-      "resolved": "github:NixOS/nixpkgs/4fe25e12eb9f4c744966dd3de5a05246cf098601?lastModified=1793977579&narHash=sha256-WrSODdZFVIs%2FHh2NzC0bY%2BROByi0bATg8WfePX8dPj8%3D"
+      "last_modified": "2026-11-14T08:26:23Z",
+      "resolved": "github:NixOS/nixpkgs/5d2b81a7a3be3e2f832879028e4d60abbf58e9a0?lastModified=1794644783&narHash=sha256-3GnIGIy15bMduoS9RnWqKTmsJLWThla42UFtm0S7%2Bus%3D"
     },
     "nodejs@26.13.1": {
       "last_modified": "2026-11-12T14:50:34Z",
@@ -45,8 +45,8 @@
       }
     },
     "taplo@0.10.0": {
-      "last_modified": "2026-11-06T15:06:19Z",
-      "resolved": "github:NixOS/nixpkgs/4fe25e12eb9f4c744966dd3de5a05246cf098601#taplo",
+      "last_modified": "2026-11-13T07:26:56Z",
+      "resolved": "github:NixOS/nixpkgs/e126e9e73c335158ff8279ac14d5f4afec153716#taplo",
       "source": "devbox-search",
       "version": "0.10.0",
       "systems": {
@@ -54,21 +54,21 @@
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/17yxgj7dj7iyd3s07n5f62bdm84khy8i-taplo-0.10.0",
+              "path": "/nix/store/0bp348z5xs3if87lyy3zcd45v0flq05w-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/17yxgj7dj7iyd3s07n5f62bdm84khy8i-taplo-0.10.0"
+          "store_path": "/nix/store/0bp348z5xs3if87lyy3zcd45v0flq05w-taplo-0.10.0"
         },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/dai9sy3ipvicw8ysgqv2mfb21w8b3h64-taplo-0.10.0",
+              "path": "/nix/store/znahkz1wanlsjcdj68jq9xxkj7xbwjqc-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/dai9sy3ipvicw8ysgqv2mfb21w8b3h64-taplo-0.10.0"
+          "store_path": "/nix/store/znahkz1wanlsjcdj68jq9xxkj7xbwjqc-taplo-0.10.0"
         },
         "x86_64-darwin": {
           "outputs": [
@@ -84,11 +84,11 @@
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/rdqc563jfd2ypjv7ir83s9cdw263zahf-taplo-0.10.0",
+              "path": "/nix/store/2xsn90hhldjm1hbxw0vsfypk33m81qdh-taplo-0.10.0",
               "default": true
             }
           ],
-          "store_path": "/nix/store/rdqc563jfd2ypjv7ir83s9cdw263zahf-taplo-0.10.0"
+          "store_path": "/nix/store/2xsn90hhldjm1hbxw0vsfypk33m81qdh-taplo-0.10.0"
         }
       }
     },
