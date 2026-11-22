@@ -87,9 +87,36 @@ class Images(Collection):
         self.calls.append(("images.remove", kwargs))
 
 
+class Response:
+    def __init__(self, payload: Any):
+        self._payload = payload
+
+    def json(self) -> Any:
+        return self._payload
+
+
+class Api:
+    def __init__(self, calls: list[tuple[str, Any]]):
+        self.calls = calls
+        self.payload: Any = []
+
+    def _url(self, path: str) -> str:
+        return f"http://docker{path}"
+
+    def get(self, url: str, params: dict[str, Any] | None = None) -> Response:
+        self.calls.append(("api.get", (url, params)))
+        return Response(self.payload)
+
+    def _result(
+        self, response: Response, json: bool = False, binary: bool = False
+    ) -> Any:
+        return response.json() if json else response
+
+
 class Docker:
     def __init__(self):
         self.calls: list[tuple[str, Any]] = []
+        self.api = Api(self.calls)
         self.containers = Collection(self.calls, "containers")
         self.images = Images(self.calls, "images")
         self.networks = Collection(self.calls, "networks")
@@ -706,13 +733,15 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 
         await client.call_tool("docker_list_containers", {})
         assert docker_client.call("containers.list") == {"all": False, "filters": None}
+        docker_client.api.payload = [{"Id": "id-1"}]
         await client.call_tool(
             "docker_list_containers", {"all": True, "filters": {"label": ["a=b"]}}
         )
-        assert docker_client.call("containers.list") == {
-            "all": True,
-            "filters": {"label": ["a=b"]},
-        }
+        assert docker_client.call("api.get") == (
+            "http://docker/containers/json",
+            {"all": 1, "filters": '{"label": {"a=b": true}}'},
+        )
+        assert ("containers.get", "id-1") in docker_client.calls
         await client.call_tool(
             "docker_create_container",
             {"image": "alpine", "name": "new", "environment": {"X": "1"}},
@@ -760,6 +789,46 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 
 
 @pytest.mark.anyio
+async def test_list_containers_filtered_uses_engine_map_form_and_resolves_ids(
+    server, docker_client
+):
+    docker_client.api.payload = [{"Id": "a"}, {"Id": "b"}]
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_list_containers",
+            {
+                "all": True,
+                "filters": {"label": ["io.kubernetes.pod.namespace=kube-system"]},
+            },
+        )
+
+    assert docker_client.call("api.get") == (
+        "http://docker/containers/json",
+        {
+            "all": 1,
+            "filters": '{"label": {"io.kubernetes.pod.namespace=kube-system": true}}',
+        },
+    )
+    assert [
+        value for name, value in docker_client.calls if name == "containers.get"
+    ] == ["a", "b"]
+    assert result.structured_content == {
+        "result": [{"id": "object-id"}, {"id": "object-id"}]
+    }
+
+
+@pytest.mark.anyio
+async def test_list_containers_with_empty_filters_uses_plain_list(
+    server, docker_client
+):
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool("docker_list_containers", {"all": True, "filters": {}})
+
+    assert docker_client.call("containers.list") == {"all": True, "filters": None}
+    assert all(name != "api.get" for name, _ in docker_client.calls)
+
+
+@pytest.mark.anyio
 async def test_image_network_and_volume_call_semantics(server, docker_client):
     async with Client(server, raise_exceptions=True) as client:
         await client.call_tool("docker_list_images", {})
@@ -775,7 +844,7 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
         assert docker_client.call("images.list") == {
             "name": "alpine",
             "all": True,
-            "filters": {"dangling": True, "label": None},
+            "filters": {"dangling": True},
         }
         await client.call_tool(
             "docker_pull_image", {"repository": "alpine", "tag": "3.20"}
@@ -797,6 +866,8 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
         assert docker_client.call("images.remove") == {"image": "test", "force": True}
         await client.call_tool("docker_list_networks", {"filters": {"label": ["x=y"]}})
         assert docker_client.call("networks.list") == {"filters": {"label": ["x=y"]}}
+        await client.call_tool("docker_list_networks", {"filters": {}})
+        assert docker_client.call("networks.list") == {"filters": None}
         await client.call_tool("docker_create_network", {"name": "n", "internal": True})
         assert docker_client.call("networks.create") == {
             "name": "n",
