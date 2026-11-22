@@ -92,6 +92,27 @@ def _client(ctx: Context[AppContext]) -> docker.DockerClient:
     return ctx.request_context.lifespan_context.docker
 
 
+def _engine_filters(model: BaseModel | None) -> dict[str, Any] | None:
+    """Drop unset filter fields instead of sending them to the engine as null."""
+    if model is None:
+        return None
+    return model.model_dump(exclude_none=True) or None
+
+
+def _container_label_filters(
+    filters: ListContainersFilters | None,
+) -> dict[str, dict[str, bool]] | None:
+    """Encode container label filters in the map form the Docker CLI uses.
+
+    docker-py's convert_filters() sends {"label": ["key=value"]}. Docker Desktop
+    only reveals the containers it hides (Kubernetes pods) for the map form
+    {"label": {"key=value": true}}, so filtered listings use the raw API.
+    """
+    if filters is None or not filters.label:
+        return None
+    return {"label": {label: True for label in filters.label}}
+
+
 _CLI_ENCODING = "utf-8"
 
 
@@ -375,12 +396,16 @@ def docker_list_containers(
         ListContainersFilters | None, Field(description="Filter containers")
     ] = None,
 ) -> list[dict[str, Any]]:
-    return [
-        docker_to_dict(container)
-        for container in _client(ctx).containers.list(
-            all=all, filters=filters.model_dump() if filters else None
-        )
-    ]
+    client = _client(ctx)
+    label_filters = _container_label_filters(filters)
+    if label_filters is None:
+        containers = client.containers.list(all=all, filters=None)
+    else:
+        api = client.api
+        params = {"all": 1 if all else 0, "filters": json.dumps(label_filters)}
+        hits = api._result(api.get(api._url("/containers/json"), params=params), True)
+        containers = [client.containers.get(hit["Id"]) for hit in hits]
+    return [docker_to_dict(container) for container in containers]
 
 
 @tool(
@@ -728,7 +753,7 @@ def docker_list_images(
     return [
         docker_to_dict(image)
         for image in _client(ctx).images.list(
-            name=name, all=all, filters=filters.model_dump() if filters else None
+            name=name, all=all, filters=_engine_filters(filters)
         )
     ]
 
@@ -1034,9 +1059,7 @@ def docker_list_networks(
 ) -> list[dict[str, Any]]:
     return [
         docker_to_dict(network)
-        for network in _client(ctx).networks.list(
-            filters=filters.model_dump() if filters else None
-        )
+        for network in _client(ctx).networks.list(filters=_engine_filters(filters))
     ]
 
 
