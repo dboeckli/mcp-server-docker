@@ -127,7 +127,7 @@ Then add the following to your MCP servers file:
     "command": "uvx",
     "args": [
       "--from",
-      "mcp-server-docker-dboeckli==0.9.0",
+      "mcp-server-docker-dboeckli==0.10.0",
       "mcp-server-docker"
     ]
   }
@@ -143,7 +143,7 @@ Every release attaches the built wheel and sdist. This works without PyPI and
 without cloning the repository:
 
 ```bash
-uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.9.0/mcp_server_docker_dboeckli-0.9.0-py3-none-any.whl \
+uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.10.0/mcp_server_docker_dboeckli-0.10.0-py3-none-any.whl \
   mcp-server-docker
 ```
 
@@ -162,7 +162,7 @@ PyPI or wheel install.
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.9.0",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
       "mcp-server-docker"
     ]
   }
@@ -180,13 +180,13 @@ image is published to GHCR:
 ```bash
 docker run -i --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/dboeckli/mcp-server-docker:0.9.0
+  ghcr.io/dboeckli/mcp-server-docker:0.10.0
 ```
 
 Alternatively, build the image locally:
 
 ```bash
-docker build -t mcp-server-docker:0.9.0 .
+docker build -t mcp-server-docker:0.10.0 .
 ```
 
 And then add the following to your MCP servers file:
@@ -201,7 +201,7 @@ And then add the following to your MCP servers file:
       "--rm",
       "-v",
       "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/dboeckli/mcp-server-docker:0.9.0"
+      "ghcr.io/dboeckli/mcp-server-docker:0.10.0"
     ]
   }
 }
@@ -421,7 +421,7 @@ Example with `uvx`:
 ```json
 "args": [
   "--from",
-  "git+https://github.com/dboeckli/mcp-server-docker@v0.9.0",
+  "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
   "mcp-server-docker",
   "--read-only"
 ]
@@ -482,7 +482,7 @@ Simply set a `ssh://` host URL in the MCP server definition:
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.9.0",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
       "mcp-server-docker"
     ],
     "env": {
