@@ -118,9 +118,11 @@ uv build
   `ghcr.io/dboeckli/mcp-server-docker:X.Y.Z`; `release.yml` tests, builds
   wheel/sdist, publishes PyPI `mcp-server-docker-dboeckli`, and creates the
   GitHub release. Update the release body from `CHANGELOG.md` if needed.
-- After both workflows finish, publish the registry entry with
-  `mcp-publisher login github` and `mcp-publisher publish` (namespace
-  `io.github.dboeckli`). It fails if the PyPI package or the image tag is missing.
+- `.github/workflows/registry-publish.yml` publishes `server.json` after both
+  tag workflows succeeded: it waits for the other run, skips versions already in
+  the registry, and pins the `mcp-publisher` release and its SHA-256. Auth is
+  `mcp-publisher login github-oidc` (namespace `io.github.dboeckli`).
+  `workflow_run` only takes effect once the file is on `main`.
 - Do not tag before the version bump is on `main`.
 
 ## Workflow

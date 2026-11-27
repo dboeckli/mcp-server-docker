@@ -1,0 +1,112 @@
+name: Registry publish
+
+# Publishes server.json to the official MCP Registry after a release tag.
+#
+# The registry verifies both packages in server.json, so it must only be called
+# once CI (GHCR image and its OCI label) and Release (PyPI description with the
+# mcp-name token) finished successfully. Both run in parallel for the same tag,
+# which is why this workflow is triggered by their completion and waits for the
+# other one. `workflow_run` only takes effect once this file is on the default
+# branch.
+on:
+  workflow_run:
+    workflows: ["CI", "Release"]
+    types: [completed]
+
+# Both completions trigger this workflow for the same tag; serialize and let the
+# second run exit through the "already published" check.
+concurrency:
+  group: registry-publish-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MCP_NAME: io.github.dboeckli/mcp-server-docker
+      PUBLISHER_VERSION: v1.8.17
+      PUBLISHER_SHA256: 4fbfe8236becd291a7a37b3e2cd7d5a6171ecf25c62a47f4fe92ef9b92007f9b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Resolve release version
+        id: release
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${TAG} for ${SHA}"
+
+      - name: Wait for CI and Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${SHA}&per_page=100" \
+              --jq '[.workflow_runs[] | select(.name == "CI" or .name == "Release")]
+                    | group_by(.name) | map(.[0] | {name, status, conclusion})')
+            total=$(jq 'length' <<<"$runs")
+            finished=$(jq '[.[] | select(.status == "completed")] | length' <<<"$runs")
+            failed=$(jq -r '[.[] | select(.status == "completed" and .conclusion != "success") | .name] | join(",")' <<<"$runs")
+            if [ -n "$failed" ]; then
+              echo "::error::Unsuccessful tag workflow: $failed"
+              exit 1
+            fi
+            if [ "$total" -eq 2 ] && [ "$finished" -eq 2 ]; then
+              echo "CI and Release succeeded for ${SHA}"
+              exit 0
+            fi
+            echo "Waiting (attempt ${attempt}/30) for: $(jq -r '[.[] | "\(.name)=\(.status)"] | join(" ")' <<<"$runs")"
+            sleep 30
+          done
+          echo "::error::Timed out waiting for CI and Release"
+          exit 1
+
+      - name: Check the registry for this version
+        id: check
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          url="https://registry.modelcontextprotocol.io/v0.1/servers/${MCP_NAME//\//%2F}/versions/${VERSION}"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "$url")
+          if [ "$code" = "200" ]; then
+            echo "${VERSION} is already in the registry, nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Registry answered ${code}, publishing ${VERSION}"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install mcp-publisher
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          sudo install -m 0755 mcp-publisher /usr/local/bin/mcp-publisher
+          mcp-publisher --help >/dev/null
+
+      - name: Publish to the registry
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          mcp-publisher login github-oidc
+          mcp-publisher publish server.json

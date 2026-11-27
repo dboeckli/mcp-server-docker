@@ -18,6 +18,9 @@ Notable changes in this fork. Older releases are documented on
 - `v*` tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
   attestations for the GHCR image; the README explains how to inspect them.
 
+- `registry-publish.yml` publishes `server.json` to the official MCP Registry
+  once both tag workflows succeeded, replacing the manual `mcp-publisher` step.
+
 ## [0.11.0] - 2026-11-27
 
 ### Added
