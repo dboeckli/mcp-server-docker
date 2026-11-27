@@ -233,6 +233,30 @@ CLI is installed.
 
 </details>
 
+## 🔏 Verifying the image
+
+Release tags (`v*`) publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
+attestations next to the image. Pulling the image is unchanged; inspect the
+attestations with:
+
+```bash
+docker buildx imagetools inspect ghcr.io/dboeckli/mcp-server-docker:0.11.0 \
+  --format '{{json .Provenance}}'
+
+docker buildx imagetools inspect ghcr.io/dboeckli/mcp-server-docker:0.11.0 \
+  --format '{{json .SBOM}}'
+```
+
+The provenance records the source repository, the commit and the build
+arguments; the SBOM lists the packages in the image. Narrow the output with
+`.Provenance.SLSA` or `.SBOM.SPDX`, for example
+`--format '{{json .SBOM.SPDX}}'`. Branch and pull-request builds are not
+attested, so only release tags carry these statements.
+
+Attestations prove what was built, not what the container may do: the image
+still mounts the host Docker socket and is as privileged as the daemon it talks
+to. Keep the sandbox/gateway boundary in place.
+
 ## 📔 Resources
 
 The server exposes resource templates rather than enumerating currently-running containers:
