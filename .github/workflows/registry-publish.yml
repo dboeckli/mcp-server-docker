@@ -28,6 +28,7 @@ jobs:
   publish:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       startsWith(github.event.workflow_run.head_branch, 'v')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -36,10 +37,6 @@ jobs:
       PUBLISHER_VERSION: v1.8.17
       PUBLISHER_SHA256: 4fbfe8236becd291a7a37b3e2cd7d5a6171ecf25c62a47f4fe92ef9b92007f9b
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-
       - name: Resolve release version
         id: release
         env:
@@ -49,6 +46,24 @@ jobs:
           set -euo pipefail
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "Publishing ${TAG} for ${SHA}"
+
+      # The job holds id-token: write, so it must not run repository code. Only
+      # the release manifest is read, and only after proving that the tag points
+      # at the commit the trusted workflows ran on.
+      - name: Verify the tag and read server.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          commit=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha)
+          if [ "$commit" != "$SHA" ]; then
+            echo "::error::Tag ${TAG} points at ${commit}, not ${SHA}"
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/contents/server.json?ref=${TAG}" \
+            -H "Accept: application/vnd.github.raw" > server.json
 
       - name: Wait for CI and Release
         env:
@@ -97,7 +112,8 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          curl -fsSL -o mcp-publisher.tar.gz \
+          curl -fsSL --proto '=https' --proto-redir '=https' \
+            -o mcp-publisher.tar.gz \
             "https://github.com/modelcontextprotocol/registry/releases/download/${PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
           echo "${PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
           tar xzf mcp-publisher.tar.gz mcp-publisher
