@@ -3,6 +3,13 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Changed
+
+- Release images are built for `linux/amd64` and `linux/arm64`; pull requests
+  stay single-architecture and each platform carries its own provenance and SBOM.
+
 ## [0.12.0] - 2026-11-27
 
 ### Added

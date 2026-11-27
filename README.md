@@ -239,8 +239,8 @@ CLI is installed.
 
 ## 🔏 Verifying the image
 
-Release tags (`v*`) publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
-attestations next to the image. Pulling the image is unchanged; inspect the
+Release tags (`v*`) publish `linux/amd64` and `linux/arm64` images, plus SLSA
+provenance (`mode=max`) and an SPDX SBOM as OCI attestations per platform. Pulling the image is unchanged; inspect the
 attestations with:
 
 ```bash

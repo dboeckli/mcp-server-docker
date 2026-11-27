@@ -99,9 +99,10 @@ uv build
   the `test-reports` artifact, and skips the Sonar scan when `SONAR_TOKEN` is
   missing, on fork PRs and on tag pushes. The quality gate is **not** enforced by
   CI; check Sonar separately.
-- Tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
-  attestations; `README.md` documents `docker buildx imagetools inspect`. Keep
-  them enabled when changing the image job.
+- Tag builds publish `linux/amd64` and `linux/arm64` images (QEMU is set up for
+  tags only; pull requests stay single-architecture) with per-platform SLSA
+  provenance (`mode=max`) and SPDX SBOM attestations. `README.md` documents
+  `docker buildx imagetools inspect`. Keep both enabled when changing the job.
 - Intentionally open Sonar items: Dockerfile root user (`docker:S6471`) and the
   14-parameter `docker_recreate_container` (`python:S107`).
 
