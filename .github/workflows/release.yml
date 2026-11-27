@@ -24,13 +24,13 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-groups --frozen
+        run: uv sync --all-groups --locked --no-build
       - name: Check formatting
-        run: uv run ruff format --check src tests
+        run: uv run --locked --no-build ruff format --check src tests
       - name: Lint
-        run: uv run ruff check src tests
+        run: uv run --locked --no-build ruff check src tests
       - name: Test
-        run: uv run pytest --cov=mcp_server_docker --cov-report=term-missing --cov-fail-under=90
+        run: uv run --locked --no-build pytest --cov=mcp_server_docker --cov-report=term-missing --cov-fail-under=90
 
   build:
     name: Build distributions

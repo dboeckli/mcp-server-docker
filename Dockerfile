@@ -9,14 +9,14 @@ ENV UV_LINK_MODE=copy
 
 COPY uv.lock pyproject.toml /app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev --no-editable
+    uv sync --frozen --no-install-project --no-dev --no-editable --no-build
 
 COPY ./src /app/src
 COPY README.md ./README.md
 COPY LICENSE LICENSE
 COPY NOTICE NOTICE
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+    uv sync --frozen --no-dev --no-editable --no-build
 
 FROM python:3.12.16-slim-bookworm@sha256:44cf1793efa7c7a476bb0f2cff81443f4a072c90c1cb127e2924933daa3e8c64
 

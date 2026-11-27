@@ -335,7 +335,8 @@ async def test_list_containers_default_is_summary(monkeypatch):
     assert fake.closed
 
     rows = default.structured_content.get("result")
-    assert isinstance(rows, list) and len(rows) == 1
+    assert isinstance(rows, list)
+    assert len(rows) == 1
     row = rows[0]
     # summary: image is a string, no config key, no Health.Log
     assert isinstance(row["image"], str)

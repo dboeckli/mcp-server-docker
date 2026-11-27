@@ -369,7 +369,8 @@ async def test_buildx_logs_rejects_tty_progress(server, docker_cli):
         )
     assert result.is_error
     message = result.content[0].text
-    assert "plain" in message and "rawjson" in message
+    assert "plain" in message
+    assert "rawjson" in message
     assert docker_cli.calls == []
 
 
@@ -728,7 +729,8 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         annotations = next(
             tool for tool in tools.tools if tool.name == "docker_list_containers"
         ).annotations
-        assert annotations.read_only_hint and annotations.idempotent_hint
+        assert annotations.read_only_hint
+        assert annotations.idempotent_hint
         assert annotations.open_world_hint is False
         remove = next(
             tool for tool in tools.tools if tool.name == "docker_remove_container"
@@ -781,9 +783,8 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
             "containers.run",
         ]
         recreated = docker_client.call("containers.run")
-        assert (
-            "container_id" not in recreated and "resolved_container_id" not in recreated
-        )
+        assert "container_id" not in recreated
+        assert "resolved_container_id" not in recreated
         await client.call_tool("docker_start_container", {"container_id": "x"})
         assert docker_client.calls[-2:] == [
             ("containers.get", "x"),
