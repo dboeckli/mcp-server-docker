@@ -15,6 +15,8 @@ Notable changes in this fork. Older releases are documented on
 - `--enable-tools` and `--disable-tools` (repeatable or comma-separated, with
   `MCP_SERVER_DOCKER_ENABLE_TOOLS` / `MCP_SERVER_DOCKER_DISABLE_TOOLS`) override
   the modes per tool name; naming a tool in both lists aborts startup.
+- `v*` tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
+  attestations for the GHCR image; the README explains how to inspect them.
 
 ## [0.11.0] - 2026-11-27
 
