@@ -104,11 +104,9 @@ def test_recreate_payload_preserves_configuration():
     endpoint = payload["NetworkingConfig"]["EndpointsConfig"]["prod"]
     assert endpoint["IPAMConfig"]["IPv4Address"] == "172.20.0.25"
     assert endpoint["Aliases"] == ["example", "example-service"]
-    assert (
-        "NetworkID" not in endpoint
-        and "EndpointID" not in endpoint
-        and "IPAddress" not in endpoint
-    )
+    assert "NetworkID" not in endpoint
+    assert "EndpointID" not in endpoint
+    assert "IPAddress" not in endpoint
     # The inspected object must not be mutated.
     assert container.attrs == original
 

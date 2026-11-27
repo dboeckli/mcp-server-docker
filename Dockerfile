@@ -9,12 +9,14 @@ ENV UV_LINK_MODE=copy
 
 COPY uv.lock pyproject.toml /app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev --no-editable
+    uv sync --frozen --no-install-project --no-dev --no-editable --no-build
 
 COPY ./src /app/src
 COPY README.md ./README.md
 COPY LICENSE LICENSE
 COPY NOTICE NOTICE
+# Dependencies are installed with --no-build above; this step builds only the
+# local package, so it cannot use --no-build.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 

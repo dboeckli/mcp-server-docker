@@ -33,23 +33,20 @@ class AppContext:
     docker: docker.DockerClient
 
 
+_LABEL_FILTER_DESCRIPTION = "Filter by label, either `key` or `key=value` format"
+
+
 class ListContainersFilters(BaseModel):
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 class ListImagesFilters(BaseModel):
     dangling: bool | None = Field(None, description="Show dangling images")
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 class ListNetworksFilter(BaseModel):
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 class ListEventsFilters(BaseModel):
@@ -59,9 +56,7 @@ class ListEventsFilters(BaseModel):
     event: list[str] | None = Field(None, description="Filter by event action")
     container: list[str] | None = Field(None, description="Filter by container")
     image: list[str] | None = Field(None, description="Filter by image")
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 ContainerID = Annotated[str, Field(description="Container ID or name")]
@@ -122,7 +117,7 @@ def _container_label_filters(
     """
     if filters is None or not filters.label:
         return None
-    return {"label": {label: True for label in filters.label}}
+    return {"label": dict.fromkeys(filters.label, True)}
 
 
 def _normalize_ports(
@@ -236,7 +231,7 @@ _DU_FIELDS = ("shared", "private", "reclaimable", "total")
 
 
 def _parse_du_summary(output: str) -> dict[str, str | None]:
-    values: dict[str, str | None] = {field: None for field in _DU_FIELDS}
+    values: dict[str, str | None] = dict.fromkeys(_DU_FIELDS)
     for line in output.splitlines():
         label, separator, value = line.partition(":")
         key = label.strip().lower()
@@ -301,8 +296,7 @@ def tool(
             result = call(*fn_args, **fn_kwargs)
             return _json_list_result(result) if isinstance(result, list) else result
 
-        name = kwargs.get("name") or fn.__name__
-        if is_tool_enabled(name, kwargs.get("annotations"), settings):
+        if is_tool_enabled(kwargs.get("annotations"), settings):
             app.tool(*args, **kwargs)(mcp_tool)
         # Direct callers keep the plain Python return value.
         return call
