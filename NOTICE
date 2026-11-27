@@ -1,0 +1,19 @@
+Docker MCP server — dboeckli fork
+=================================
+
+This repository is a modified version of
+ckreiling/mcp-server-docker (https://github.com/ckreiling/mcp-server-docker),
+originally maintained by Christian Kreiling and the upstream contributors.
+
+Upstream copyright and authorship are retained. Modifications and additional
+code in this fork are maintained by Dominique Boeckli (dboeckli) and are
+released under the same license.
+
+This fork is not affiliated with or endorsed by the upstream maintainer,
+Docker, Inc., or the Model Context Protocol project.
+
+Files in this repository have been changed relative to upstream. See the Git
+history and CHANGELOG.md for the list of changes and their dates.
+
+License: GNU General Public License v3.0 (GPL-3.0-only), see LICENSE.
+Source:  https://github.com/dboeckli/mcp-server-docker

@@ -16,6 +16,7 @@ requires-python = ">=3.12"
 
 classifiers = [
     "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3.12",
 ]
 
@@ -27,6 +28,10 @@ Changelog = "https://github.com/dboeckli/mcp-server-docker/blob/main/CHANGELOG.m
 [[project.authors]]
 name = "Christian Kreiling"
 email = "kreiling@hey.com"
+
+[[project.maintainers]]
+name = "Dominique Boeckli"
+email = "dboeckli@gmail.com"
 
 [dependency-groups]
 dev = [

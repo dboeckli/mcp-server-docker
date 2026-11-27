@@ -28,7 +28,7 @@ renamed or deleted upstream.
 | `fix/attached-run-output` | [#69](https://github.com/ckreiling/mcp-server-docker/issues/69) | [#77](https://github.com/dboeckli/mcp-server-docker/issues/77) |
 | `fix/build-intermediate-cleanup` | [#68](https://github.com/ckreiling/mcp-server-docker/issues/68) | [#79](https://github.com/dboeckli/mcp-server-docker/issues/79) |
 | `fix/docker-filter-none-values` | [#67](https://github.com/ckreiling/mcp-server-docker/issues/67) | Already fixed here (`0919f4b`) |
-| `contribution/docker-mcp-recreate-optin-62` | [#62](https://github.com/ckreiling/mcp-server-docker/issues/62) | Not yet addressed |
+| `contribution/docker-mcp-recreate-optin-62` | [#62](https://github.com/ckreiling/mcp-server-docker/issues/62) | [#86](https://github.com/dboeckli/mcp-server-docker/issues/86) |
 | `contribution/docker-mcp-log-bounds-70` | [#70](https://github.com/ckreiling/mcp-server-docker/issues/70) | [#82](https://github.com/dboeckli/mcp-server-docker/issues/82) |
 | `contribution/docker-mcp-paramiko-extra-72` | [#72](https://github.com/ckreiling/mcp-server-docker/issues/72) | Partially addressed (`paramiko` 5.x) |
 
