@@ -22,6 +22,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12.16-slim-bookworm@sha256:44cf1793efa7c7a476bb0f2cff81443f4a072c90c1cb127e2924933daa3e8c64
 
+LABEL io.modelcontextprotocol.server.name="io.github.dboeckli/mcp-server-docker"
+
 WORKDIR /app
  
 COPY --from=uv --chown=app:app /app/.venv /app/.venv

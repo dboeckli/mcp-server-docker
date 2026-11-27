@@ -3,7 +3,7 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
-## [Unreleased]
+## [0.11.0] - 2026-11-27
 
 ### Added
 
@@ -22,6 +22,15 @@ Notable changes in this fork. Older releases are documented on
 - `glama.json` carries the full server metadata used by MCP directory listings.
 - The README contains the `mcp-name` token used by the official MCP Registry to
   verify ownership of the PyPI package.
+- `server.json` carries the official MCP Registry metadata, and the image label
+  `io.modelcontextprotocol.server.name` lets the registry verify the GHCR image
+  as well.
+
+### Packaging
+
+- PyPI package `mcp-server-docker-dboeckli==0.11.0`
+- Container image `ghcr.io/dboeckli/mcp-server-docker:0.11.0`
+- MCP Registry entry `io.github.dboeckli/mcp-server-docker`
 
 ## [0.10.0] - 2026-11-27
 
