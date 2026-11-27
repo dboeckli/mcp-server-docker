@@ -3,7 +3,7 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
-## [Unreleased]
+## [0.13.0] - 2026-11-27
 
 ### Added
 
@@ -14,6 +14,13 @@ Notable changes in this fork. Older releases are documented on
   certificate paths, URL credentials and `DOCKER_*` environment values are
   redacted from daemon errors. Read-only and idempotent, so it stays available
   under `--read-only` and is usable behind a gateway.
+
+### Packaging
+
+- PyPI package `mcp-server-docker-dboeckli==0.13.0`
+- Container image `ghcr.io/dboeckli/mcp-server-docker:0.13.0` for `linux/amd64`
+  and `linux/arm64`
+- MCP Registry entry `io.github.dboeckli/mcp-server-docker`
 
 ## [0.12.1] - 2026-11-27
 
