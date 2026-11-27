@@ -103,13 +103,18 @@ uv build
 ### Release
 
 - Version lives only in `src/mcp_server_docker/_version.py`; the release workflow
-  rejects a tag that does not match it.
-- Steps: bump `_version.py`; update every version pin in README install snippets;
-  add a `[Unreleased]` CHANGELOG entry; merge; then tag `vX.Y.Z` and push the tag.
+  rejects a tag that does not match it. `server.json` (official MCP Registry) is
+  checked against it by `tests/test_version.py`.
+- Steps: bump `_version.py` and the `server.json` version/tag; update every
+  version pin in README install snippets; add a CHANGELOG entry; merge; then tag
+  `vX.Y.Z` and push the tag.
 - A `v*` tag triggers both workflows: `ci.yml` publishes
   `ghcr.io/dboeckli/mcp-server-docker:X.Y.Z`; `release.yml` tests, builds
   wheel/sdist, publishes PyPI `mcp-server-docker-dboeckli`, and creates the
   GitHub release. Update the release body from `CHANGELOG.md` if needed.
+- After both workflows finish, publish the registry entry with
+  `mcp-publisher login github` and `mcp-publisher publish` (namespace
+  `io.github.dboeckli`). It fails if the PyPI package or the image tag is missing.
 - Do not tag before the version bump is on `main`.
 
 ## Workflow
