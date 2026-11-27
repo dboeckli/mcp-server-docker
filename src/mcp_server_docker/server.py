@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import wraps
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NoReturn
 
 import docker
 from docker.models.containers import Container
@@ -707,6 +707,84 @@ def _reject_preserve_overrides(**overrides: Any) -> None:
         )
 
 
+def _remove_container_for_recreate(
+    container: Container,
+    attrs: dict[str, Any],
+    was_running: bool,
+) -> None:
+    """Stop and remove the container, tolerating auto-removal while stopping."""
+    if was_running:
+        container.stop()
+    try:
+        container.remove()
+    except docker.errors.NotFound:
+        auto_remove = bool((attrs.get("HostConfig") or {}).get("AutoRemove"))
+        if not (was_running and auto_remove):
+            raise
+
+
+def _create_replacement_container(
+    docker_client: docker.DockerClient,
+    payload: dict[str, Any],
+    name: str,
+) -> Container:
+    created = docker_client.api.create_container_from_config(payload, name=name)
+    return docker_client.containers.get(created["Id"])
+
+
+def _start_if_running(container: Container, was_running: bool) -> None:
+    if was_running:
+        container.start()
+
+
+def _discard_replacement(replacement: Container) -> None:
+    try:
+        replacement.remove(force=True)
+    except docker.errors.DockerException:
+        return
+
+
+def _restore_after_failed_recreate(
+    docker_client: docker.DockerClient,
+    original_payload: dict[str, Any],
+    name: str,
+    was_running: bool,
+    recreate_error: Exception,
+) -> NoReturn:
+    """Restore the inspected configuration, then report the failed recreate."""
+    try:
+        restored = docker_client.api.create_container_from_config(
+            original_payload, name=name
+        )
+        _start_if_running(docker_client.containers.get(restored["Id"]), was_running)
+    except Exception as rollback_error:
+        raise RuntimeError(
+            "Container recreation failed and automatic restoration also failed: "
+            f"recreate={recreate_error!r}; restore={rollback_error!r}"
+        ) from rollback_error
+    raise RuntimeError(
+        "Container recreation failed; the original inspected configuration "
+        "was restored successfully"
+    ) from recreate_error
+
+
+def _recreated_container_result(
+    replacement: Container,
+    attrs: dict[str, Any],
+    original_id: str,
+) -> dict[str, Any]:
+    labels = (attrs.get("Config") or {}).get("Labels") or {}
+    return docker_to_dict(
+        replacement,
+        overrides={
+            "status": "recreated",
+            "recreated_from": original_id,
+            "configuration_preserved": True,
+            "compose_managed": bool(labels.get("com.docker.compose.project")),
+        },
+    )
+
+
 def _recreate_existing_container(
     docker_client: docker.DockerClient,
     container_id: str,
@@ -721,62 +799,27 @@ def _recreate_existing_container(
     original_image = attrs.get("Image")
     if not isinstance(original_image, str) or not original_image:
         raise ValueError("Container inspect data has no immutable image ID")
-    state = attrs.get("State") or {}
-    was_running = bool(state.get("Running"))
+    was_running = bool((attrs.get("State") or {}).get("Running"))
     target_image = image or original_image
     # Preflight: fail before stopping/removing anything if the image is missing.
     docker_client.images.get(target_image)
     original_payload = _build_recreate_payload(container, original_image)
     replacement_payload = _build_recreate_payload(container, target_image)
+    _remove_container_for_recreate(container, attrs, was_running)
     replacement: Container | None = None
-    if was_running:
-        container.stop()
     try:
-        container.remove()
-    except docker.errors.NotFound:
-        auto_remove = bool((attrs.get("HostConfig") or {}).get("AutoRemove"))
-        if not (was_running and auto_remove):
-            raise
-    try:
-        created = docker_client.api.create_container_from_config(
-            replacement_payload, name=original_name
+        replacement = _create_replacement_container(
+            docker_client, replacement_payload, original_name
         )
-        replacement = docker_client.containers.get(created["Id"])
-        if was_running:
-            replacement.start()
+        _start_if_running(replacement, was_running)
         replacement.reload()
-    except Exception as recreate_error:
+    except Exception as recreate_error:  # noqa: BLE001 - any failure must restore
         if replacement is not None:
-            try:
-                replacement.remove(force=True)
-            except docker.errors.DockerException:
-                replacement = None
-        try:
-            restored = docker_client.api.create_container_from_config(
-                original_payload, name=original_name
-            )
-            restored_container = docker_client.containers.get(restored["Id"])
-            if was_running:
-                restored_container.start()
-        except Exception as rollback_error:
-            raise RuntimeError(
-                "Container recreation failed and automatic restoration also failed: "
-                f"recreate={recreate_error!r}; restore={rollback_error!r}"
-            ) from rollback_error
-        raise RuntimeError(
-            "Container recreation failed; the original inspected configuration "
-            "was restored successfully"
-        ) from recreate_error
-    labels = (attrs.get("Config") or {}).get("Labels") or {}
-    return docker_to_dict(
-        replacement,
-        overrides={
-            "status": "recreated",
-            "recreated_from": original_id,
-            "configuration_preserved": True,
-            "compose_managed": bool(labels.get("com.docker.compose.project")),
-        },
-    )
+            _discard_replacement(replacement)
+        _restore_after_failed_recreate(
+            docker_client, original_payload, original_name, was_running, recreate_error
+        )
+    return _recreated_container_result(replacement, attrs, original_id)
 
 
 @tool(

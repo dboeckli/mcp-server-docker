@@ -4,7 +4,7 @@ from copy import deepcopy
 from unittest.mock import Mock, patch
 
 import pytest
-from docker.errors import ImageNotFound, NotFound
+from docker.errors import DockerException, ImageNotFound, NotFound
 from docker.models.containers import Container
 
 import mcp_server_docker.server as server_module
@@ -205,6 +205,75 @@ def test_failed_recreate_restores_original_configuration():
     assert client.api.create_container_from_config.call_count == 2
     rollback = client.api.create_container_from_config.call_args_list[1].args[0]
     assert rollback["Image"] == "sha256:old-image"
+    restored.start.assert_called_once_with()
+
+
+def test_failed_recreate_and_failed_restore_reports_both():
+    original = _mock_container(running=True)
+    client = _client_with(original)
+    client.api.create_container_from_config.side_effect = [
+        RuntimeError("create failed"),
+        RuntimeError("restore failed"),
+    ]
+
+    with pytest.raises(
+        RuntimeError, match="automatic restoration also failed"
+    ) as error:
+        _recreate_existing_container(client, "example-container", "example:new")
+
+    assert "create failed" in str(error.value)
+    assert "restore failed" in str(error.value)
+
+
+def test_removal_not_found_is_reraised_without_auto_remove():
+    original = _mock_container(running=True)
+    original.remove.side_effect = NotFound("gone")
+    client = _client_with(original)
+
+    with pytest.raises(NotFound):
+        _recreate_existing_container(client, "example-container", "example:new")
+
+    client.api.create_container_from_config.assert_not_called()
+
+
+def test_failed_start_removes_partial_replacement_and_restores():
+    original = _mock_container(running=True)
+    replacement = _mock_container(running=True)
+    replacement.id = "new-container-id"
+    replacement.start.side_effect = RuntimeError("start failed")
+    restored = _mock_container(running=True)
+    restored.id = "restored-container-id"
+    client = _client_with(original, replacement, restored)
+    client.api.create_container_from_config.side_effect = [
+        {"Id": replacement.id},
+        {"Id": restored.id},
+    ]
+
+    with pytest.raises(RuntimeError, match="restored successfully"):
+        _recreate_existing_container(client, "example-container", "example:new")
+
+    replacement.remove.assert_called_once_with(force=True)
+    restored.start.assert_called_once_with()
+
+
+def test_failed_start_tolerates_cleanup_failure():
+    original = _mock_container(running=True)
+    replacement = _mock_container(running=True)
+    replacement.id = "new-container-id"
+    replacement.start.side_effect = RuntimeError("start failed")
+    replacement.remove.side_effect = DockerException("cannot remove")
+    restored = _mock_container(running=True)
+    restored.id = "restored-container-id"
+    client = _client_with(original, replacement, restored)
+    client.api.create_container_from_config.side_effect = [
+        {"Id": replacement.id},
+        {"Id": restored.id},
+    ]
+
+    with pytest.raises(RuntimeError, match="restored successfully"):
+        _recreate_existing_container(client, "example-container", "example:new")
+
+    replacement.remove.assert_called_once_with(force=True)
     restored.start.assert_called_once_with()
 
 

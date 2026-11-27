@@ -102,9 +102,8 @@ uv build
 - Tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
   attestations; `README.md` documents `docker buildx imagetools inspect`. Keep
   them enabled when changing the image job.
-- Intentionally open Sonar items: Dockerfile root user (`docker:S6471`),
-  14-parameter `docker_recreate_container` (`python:S107`), recreate cognitive
-  complexity (`python:S3776`).
+- Intentionally open Sonar items: Dockerfile root user (`docker:S6471`) and the
+  14-parameter `docker_recreate_container` (`python:S107`).
 
 ### Release
 
@@ -122,7 +121,10 @@ uv build
   tag workflows succeeded: it waits for the other run, skips versions already in
   the registry, and pins the `mcp-publisher` release and its SHA-256. Auth is
   `mcp-publisher login github-oidc` (namespace `io.github.dboeckli`).
-  `workflow_run` only takes effect once the file is on `main`.
+  Because the job holds `id-token: write` it never checks out repository code:
+  it runs only for runs from this repository and reads `server.json` from the
+  tag after verifying the tag points at the run's commit. `workflow_run` only
+  takes effect once the file is on `main`.
 - Do not tag before the version bump is on `main`.
 
 ## Workflow
