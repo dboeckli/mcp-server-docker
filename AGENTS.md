@@ -38,16 +38,18 @@ uv build
 
 - `src/mcp_server_docker/server.py` is the whole server: `@tool` registrations,
   prompt, resources and helpers. `output_schemas.py` serializes Docker models,
-  `settings.py` implements read-only mode, `redaction.py` redacts `Config.Env`.
+  `settings.py` implements the safety modes (read-only, no-destructive, per-tool
+  enable/disable lists); `redaction.py` redacts `Config.Env`.
 - Settings are read at **import time** and tools are registered (or omitted) then.
-  Read-only mode removes non-read-only tools entirely. To test another mode,
-  spawn a new process.
+  A safety mode removes tools entirely (they are not registered). To test
+  another mode, spawn a new process.
 - Tools get the client via `_client(ctx)`; the lifespan opens `docker.from_env()`.
 - List-returning tools return a Python list; the `@tool` wrapper emits one JSON
   array text block plus `structured_content={"result": [...]}`. Direct Python
   callers get the plain return value.
 - Read-only tools must set `ToolAnnotations(read_only_hint=True, ...)` or they
-  disappear under `--read-only`.
+  disappear under `--read-only`. Destructive tools must set
+  `destructive_hint=True` or `--disable-destructive` keeps them.
 - `docker_to_dict(obj, overrides=None, format="summary"|"full")`: list tools
   default to `summary`, single-object tools to `full`. `full` caps each
   `Health.Log` entry at 500 characters.
@@ -67,9 +69,10 @@ uv build
   are passed (for example `format=`).
 - `tests/test_output_schemas.py` exercises the real serializers with real docker
   models; `tests/test_recreate.py` uses `Mock(spec=Container)`.
-- `tests/test_settings.py` covers read-only gating.
-- Tool counts are asserted in tests (36 total, 22 read-only). Update them when
-  adding/removing tools; also update `README.md` tool docs.
+- `tests/test_settings.py` covers the safety-mode gating.
+- Tool counts are asserted in tests (36 total, 22 read-only, 31 without
+  destructive tools). Update them when adding/removing tools; also update
+  `README.md` tool docs.
 - The `production_stdio` tests spawn `uv run mcp-server-docker`; they need a
   working project venv (or `UV_PROJECT_ENVIRONMENT`).
 - After changing `_version.py`, refresh editable metadata or `test_version`

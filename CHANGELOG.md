@@ -3,6 +3,19 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Added
+
+- `--disable-destructive` (alias `--no-destructive`, env
+  `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE` / `MCP_SERVER_DOCKER_NO_DESTRUCTIVE`)
+  registers every tool except the five annotated with `destructiveHint=true`, so
+  an agent can create, pull, start and stop without being able to remove or
+  recreate resources. `--read-only` stays the stricter mode and wins.
+- `--enable-tools` and `--disable-tools` (repeatable or comma-separated, with
+  `MCP_SERVER_DOCKER_ENABLE_TOOLS` / `MCP_SERVER_DOCKER_DISABLE_TOOLS`) override
+  the modes per tool name; naming a tool in both lists aborts startup.
+
 ## [0.11.0] - 2026-11-27
 
 ### Added

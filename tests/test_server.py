@@ -1081,6 +1081,31 @@ async def test_production_stdio_read_only_cli_flag():
     assert "docker_container_stats" in names
 
 
+@pytest.mark.anyio
+async def test_production_stdio_disable_destructive_exposes_only_safe_tools():
+    params = StdioServerParameters(
+        command="uv",
+        args=["run", "mcp-server-docker", "--disable-destructive"],
+    )
+    async with Client(stdio_client(params), raise_exceptions=True) as client:
+        tools = await client.list_tools()
+        blocked = await client.call_tool(
+            "docker_remove_container", {"container_id": "x"}
+        )
+    names = {tool.name for tool in tools.tools}
+    assert len(names) == 31
+    assert {
+        "docker_remove_container",
+        "docker_remove_image",
+        "docker_remove_network",
+        "docker_remove_volume",
+        "docker_recreate_container",
+    }.isdisjoint(names)
+    assert {"docker_create_container", "docker_stop_container"} <= names
+    assert blocked.is_error
+    assert "Unknown tool" in blocked.content[0].text
+
+
 def _inspectable(calls, kind, attrs):
     obj = Object(calls)
     obj.attrs = attrs

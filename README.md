@@ -46,7 +46,8 @@ The differences that matter in practice:
   and attached-run output with `truncated`/`bytes` metadata.
 - **More read-only tools:** container health, processes, stats, events, disk
   usage, version and system info.
-- **Read-only mode** (`--read-only`) for gateway allow-listing.
+- **Safety modes** (`--read-only`, `--disable-destructive`) for gateway
+  allow-listing.
 - **Docker Desktop correctness:** label filters in the CLI map form and unset
   filter fields omitted instead of sent as `null`.
 - **Packaging:** PyPI package, GHCR image and an independent release history.
@@ -420,19 +421,39 @@ lets the LLM see the current state, which is useful for cleanup.
 This prompt is not required to use the server; the tools work directly without
 it.
 
-## 🔒 Read-only mode
+## 🔒 Safety modes
 
-Start the server with `--read-only`, or set
-`MCP_SERVER_DOCKER_READ_ONLY=1`, to expose only tools annotated with
-`readOnlyHint=true`. Write and destructive tools are not registered at all:
-they are absent from `tools/list` and calls to them return `Unknown tool`.
+Three modes decide which tools are registered. A filtered tool is absent from
+`tools/list`, and calling it returns `Unknown tool`.
 
-- Default: all 36 tools.
-- Read-only: the 22 read-only tools, including all `docker_list_*`, log, stats,
-  inspect, `docker_container_health`, `docker_events_list`, disk-usage, and
-  Buildx inspection tools.
-- The container log/stats resources and the `docker_compose` prompt remain
-  available.
+| Mode | Flag / env | Tools |
+| --- | --- | --- |
+| Default | – | 36 |
+| No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 31 |
+| Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 22 |
+
+- **No destructive** removes the five tools annotated with
+  `destructiveHint=true` (`docker_remove_container`, `docker_remove_image`,
+  `docker_remove_network`, `docker_remove_volume`,
+  `docker_recreate_container`). Creating, pulling, starting and stopping
+  containers still works. `--no-destructive` and
+  `MCP_SERVER_DOCKER_NO_DESTRUCTIVE` are accepted as synonyms.
+- **Read-only** exposes only tools annotated with `readOnlyHint=true`: all
+  `docker_list_*`, log, stats, inspect, `docker_container_health`,
+  `docker_events_list`, disk usage and the Buildx inspection tools.
+- Read-only is the stricter mode and wins when both are set.
+- The container log/stats resources and the `docker_compose` prompt stay
+  available in every mode.
+
+Per-tool overrides on top of the modes:
+
+- `--enable-tools docker_version,docker_system_info` (repeatable,
+  `MCP_SERVER_DOCKER_ENABLE_TOOLS`) registers the named tools regardless of the
+  mode above.
+- `--disable-tools docker_stop_container` (repeatable,
+  `MCP_SERVER_DOCKER_DISABLE_TOOLS`) removes the named tools, unless the same
+  tool is also enabled.
+- Naming a tool in both lists aborts startup with an error.
 
 Example with `uvx`:
 
@@ -441,22 +462,23 @@ Example with `uvx`:
   "--from",
   "git+https://github.com/dboeckli/mcp-server-docker@v0.11.0",
   "mcp-server-docker",
-  "--read-only"
+  "--disable-destructive"
 ]
 ```
 
-Or with the environment variable:
+Or with the environment variables:
 
 ```json
 "env": {
-  "MCP_SERVER_DOCKER_READ_ONLY": "1"
+  "MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE": "1",
+  "MCP_SERVER_DOCKER_DISABLE_TOOLS": "docker_stop_container"
 }
 ```
 
-For the sbx MCP gateway, append `--read-only` to the comma-separated `--args`
-list, e.g. `sbx mcp add docker --args "--from,...,mcp-server-docker,--read-only"`.
+For the sbx MCP gateway, append the flag to the comma-separated `--args` list,
+e.g. `sbx mcp add docker --args "--from,...,mcp-server-docker,--disable-destructive"`.
 
-Read-only mode is a best-effort guardrail, not a sandbox boundary. The process
+These modes are best-effort guardrails, not a sandbox boundary. The process
 still has host Docker access; keep gateway policy and sandbox isolation in place.
 
 ## 🚧 Disclaimers
