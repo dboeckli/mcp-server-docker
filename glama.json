@@ -1,6 +1,26 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": [
-    "dboeckli"
-  ]
+  "maintainers": ["dboeckli"],
+  "name": "mcp-server-docker",
+  "display_name": "Docker MCP Server",
+  "description": "MCP server for managing Docker with natural language: containers, images, networks, volumes and Buildx builds, with bounded LLM-friendly output and a read-only mode for MCP gateways.",
+  "repository": "https://github.com/dboeckli/mcp-server-docker",
+  "license": "GPL-3.0-only",
+  "runtime": "python",
+  "tags": [
+    "docker",
+    "containers",
+    "buildx",
+    "docker-compose",
+    "mcp",
+    "llm",
+    "devops"
+  ],
+  "mcpServers": {
+    "mcp-server-docker": {
+      "command": "uvx",
+      "args": ["--from", "mcp-server-docker-dboeckli", "mcp-server-docker"],
+      "env": {}
+    }
+  }
 }

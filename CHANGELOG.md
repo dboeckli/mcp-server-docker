@@ -3,6 +3,26 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Added
+
+- The server starts even when no Docker daemon is reachable: the client falls
+  back to the SDK's default API version, so `initialize` and `tools/list`
+  succeed and tool calls return a clear error instead of the process failing at
+  startup. This lets MCP directories and gateways enumerate the tools before a
+  daemon is available.
+
+### Documentation and metadata
+
+- The repository is reported as a standalone project (detached from the upstream
+  fork network on 2026-11-27), with a maintenance-status section, status badges
+  and repository topics; `AGENTS.md` and `docs/upstream-tracking.md` use
+  standalone wording.
+- `glama.json` carries the full server metadata used by MCP directory listings.
+- The README contains the `mcp-name` token used by the official MCP Registry to
+  verify ownership of the PyPI package.
+
 ## [0.10.0] - 2026-11-27
 
 ### Added

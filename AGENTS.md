@@ -2,9 +2,10 @@
 
 ## What this repo is
 
-- Fork of
-  [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
-  Fixes are maintained here only and are **not** contributed upstream. Monitored
+- Standalone continuation of
+  [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker),
+  detached from its fork network. Fixes are maintained here only and are **not**
+  contributed upstream. Monitored
   repos/branches and the issue map are in `docs/upstream-tracking.md` (base
   `ckreiling`, reference fork
   [`X1pheR/mcp-server-docker`](https://github.com/X1pheR/mcp-server-docker)).
@@ -116,5 +117,5 @@ uv build
 - Use a `feature/<issue>-<short-text>` branch; never commit or push without
   explicit approval. Before a push, write `target/review/changes.patch`
   (`git diff <base>`) and open it in IntelliJ.
-- This is a downstream fork: do not open upstream PRs or push to `ckreiling`;
+- This is a downstream project: do not open upstream PRs or push to `ckreiling`;
   keep `docs/upstream-tracking.md` current when addressing a tracked issue.

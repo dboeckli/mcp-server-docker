@@ -243,7 +243,10 @@ def _parse_du_summary(output: str) -> dict[str, str | None]:
 @asynccontextmanager
 async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
     """Create and close the Docker client for one server lifetime."""
-    client = docker.from_env()
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        client = docker.from_env(version=docker.constants.DEFAULT_DOCKER_API_VERSION)
     try:
         yield AppContext(docker=client)
     finally:

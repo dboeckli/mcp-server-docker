@@ -1,8 +1,9 @@
 # Upstream & fork tracking
 
-This fork is based on
-[`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
-We track **both** the base repository and the most relevant community fork,
+This repository is a standalone continuation of
+[`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker),
+detached from its fork network on 2026-11-27. We track **both** the base
+repository and the most relevant community fork,
 [`X1pheR/mcp-server-docker`](https://github.com/X1pheR/mcp-server-docker).
 
 The base repository is the source of new issues and pull requests. The
@@ -16,7 +17,7 @@ to re-implement a fix from scratch.
 | --- | --- | --- |
 | Base | [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker) | Canonical issues, pull requests and releases |
 | Reference fork | [`X1pheR/mcp-server-docker`](https://github.com/X1pheR/mcp-server-docker) | Ready-made branches for several upstream issues |
-| This fork | [`dboeckli/mcp-server-docker`](https://github.com/dboeckli/mcp-server-docker) | Where accepted fixes land |
+| This repo | [`dboeckli/mcp-server-docker`](https://github.com/dboeckli/mcp-server-docker) | Where accepted fixes land |
 
 ## X1pheR branch ↔ upstream issue map
 
@@ -55,9 +56,9 @@ gh api repos/ckreiling/mcp-server-docker/compare/main...X1pheR:fix/attached-run-
 
 - Many recent upstream issues are automated or AI-generated reports (directory
   listings, conformance sweeps, security-disclosure requests). Check whether an
-  issue describes a real code change before copying it into this fork.
+  issue describes a real code change before copying it into this repository.
 - Prefer porting an existing `X1pheR` branch over re-implementing the same fix;
-  adapt it to this fork's renamed tools (`docker_*`) and `@tool`/`_client`
+  adapt it to this repository's renamed tools (`docker_*`) and `@tool`/`_client`
   structure.
 - When a fix is ported, update the branch/issue mapping in this file and close
   the corresponding tracking issue.
