@@ -7,6 +7,7 @@
 [![ghcr.io](https://img.shields.io/badge/ghcr.io-mcp--server--docker-blue)](https://github.com/dboeckli/mcp-server-docker/pkgs/container/mcp-server-docker)
 [![License: GPL-3.0-only](https://img.shields.io/github/license/dboeckli/mcp-server-docker)](LICENSE)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=dboeckli_mcp-server-docker&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=dboeckli_mcp-server-docker)
+[![Docker MCP Server on Glama](https://glama.ai/mcp/servers/dboeckli/mcp-server-docker/badges/score.svg)](https://glama.ai/mcp/servers/dboeckli/mcp-server-docker)
 
 An MCP server for managing Docker with natural language — maintained, with
 Buildx tooling and bounded, LLM-friendly output.
