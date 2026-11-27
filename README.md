@@ -1,22 +1,40 @@
 # 🐋 Docker MCP server
 
-An MCP server for managing Docker with natural language!
+<!-- mcp-name: io.github.dboeckli/mcp-server-docker -->
 
-> This is the [`dboeckli` fork](https://github.com/dboeckli/mcp-server-docker) of
-> [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
-> Credit for the original server belongs to Christian Kreiling and the upstream
-> contributors. This fork adds the Buildx tools and related maintenance.
+[![CI](https://github.com/dboeckli/mcp-server-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/dboeckli/mcp-server-docker/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mcp-server-docker-dboeckli)](https://pypi.org/project/mcp-server-docker-dboeckli/)
+[![ghcr.io](https://img.shields.io/badge/ghcr.io-mcp--server--docker-blue)](https://github.com/dboeckli/mcp-server-docker/pkgs/container/mcp-server-docker)
+[![License: GPL-3.0-only](https://img.shields.io/github/license/dboeckli/mcp-server-docker)](LICENSE)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=dboeckli_mcp-server-docker&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=dboeckli_mcp-server-docker)
+
+An MCP server for managing Docker with natural language — maintained, with
+Buildx tooling and bounded, LLM-friendly output.
+
+```bash
+uvx --from mcp-server-docker-dboeckli mcp-server-docker
+```
+
+> **Maintenance status:** the upstream project
+> [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker)
+> last released `v0.3.0` and is effectively unmaintained. This repository is its
+> maintained continuation: it keeps the upstream Docker MCP surface and is
+> released independently as `mcp-server-docker-dboeckli` (PyPI) and
+> `ghcr.io/dboeckli/mcp-server-docker` (GHCR).
 >
-> This repository is independently maintained by
-> [dboeckli](https://github.com/dboeckli). It is not affiliated with or endorsed
-> by the upstream maintainer, Docker, Inc., or the Model Context Protocol
-> project. Fixes in this fork are maintained here only and are not contributed
-> back upstream.
+> Credit for the original server belongs to Christian Kreiling and the upstream
+> contributors. Maintained by [dboeckli](https://github.com/dboeckli); not
+> affiliated with or endorsed by the upstream maintainer, Docker, Inc., or the
+> Model Context Protocol project. Fixes are maintained here only and are not
+> contributed back upstream.
 
-## 🧭 Why this fork exists
+See the [Quickstart](#-quickstart) below for Claude Desktop, container and
+source setups.
 
-This fork keeps the upstream Docker MCP surface and adds what is needed to run
-it from agent sandboxes and day-to-day LLM clients. It is based on upstream
+## 🧭 Why this repository exists
+
+This repository keeps the upstream Docker MCP surface and adds what is needed to
+run it from agent sandboxes and day-to-day LLM clients. It is based on upstream
 `main` at `57a7df2` (v0.3.0) and is released independently as
 `mcp-server-docker-dboeckli` (PyPI) and
 `ghcr.io/dboeckli/mcp-server-docker` (GHCR).
@@ -31,10 +49,10 @@ The differences that matter in practice:
 - **Read-only mode** (`--read-only`) for gateway allow-listing.
 - **Docker Desktop correctness:** label filters in the CLI map form and unset
   filter fields omitted instead of sent as `null`.
-- **Packaging:** PyPI package, GHCR image and fork-level release history.
+- **Packaging:** PyPI package, GHCR image and an independent release history.
 
-This is a downstream fork, not an upstream contribution channel: fixes are
-maintained here only and are not contributed back upstream. See
+This is an independent downstream project, not an upstream contribution channel:
+fixes are maintained here only and are not contributed back upstream. See
 [docs/upstream-tracking.md](docs/upstream-tracking.md) for the repositories we
 monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 
@@ -54,7 +72,7 @@ monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 - Docker sandbox users: expose the host Docker daemon and Buildx to a sandbox
   through an MCP gateway without mounting the Docker socket.
 
-## 🍴 What this fork adds
+## 🍴 What this repository adds
 
 - Buildx tools: `docker_buildx_list`, `docker_buildx_history`, and
   `docker_buildx_logs`
@@ -64,7 +82,7 @@ monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 - Docker/Buildx integration tests and coverage in CI
 - Automated dependency updates (Dependabot and Renovate)
 
-## 🔭 Upstream & fork tracking
+## 🔭 Upstream tracking
 
 We track the upstream base repository and, in addition, the `X1pheR` community
 fork, which carries ready branches for several open upstream issues. Monitored
@@ -87,7 +105,7 @@ example
 - Read-only tools (`docker_list_*`, `docker_fetch_container_logs`,
   `docker_buildx_*`) can be allow-listed; write tools should stay behind `ask`
   or be denied.
-- The Buildx tools added by this fork are meant for this setup: inspecting
+- The Buildx tools added by this repository are meant for this setup: inspecting
   builders, build history and build logs from inside the sandbox.
 
 This is not a sandbox boundary by itself: the host-side server still has access
@@ -113,7 +131,7 @@ Git.
 
 > The PyPI name **`mcp-server-docker`** belongs to the
 > [upstream project](https://github.com/ckreiling/mcp-server-docker) and stops at
-> `0.3.0`. It does not contain the Buildx tools of this fork.
+> `0.3.0`. It does not contain the Buildx tools of this repository.
 
 If you don't have `uv` installed, follow the installation instructions for your
 system:
@@ -552,10 +570,10 @@ After setting up devbox you can configure your Claude MCP config to use it:
 This project is distributed under the **GNU General Public License v3.0**
 (GPL-3.0-only); see [LICENSE](LICENSE).
 
-It is a modified fork of
+It is a modified version of
 [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
 Upstream copyright and authorship remain with Christian Kreiling and the
-upstream contributors. Modifications in this fork are maintained by
+upstream contributors. Modifications in this repository are maintained by
 [dboeckli](https://github.com/dboeckli) under the same license. See
 [NOTICE](NOTICE) and [CHANGELOG.md](CHANGELOG.md) for the recorded changes.
 
