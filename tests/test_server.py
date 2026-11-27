@@ -161,7 +161,10 @@ def docker_client(monkeypatch):
     monkeypatch.setattr(
         server_module,
         "docker_to_dict",
-        lambda _obj, overrides=None: {"id": "object-id", **(overrides or {})},
+        lambda _obj, overrides=None, format="full": {
+            "id": "object-id",
+            **(overrides or {}),
+        },
     )
     monkeypatch.setattr(server_module.docker, "from_env", lambda: client)
     yield client

@@ -238,9 +238,13 @@ flood the client with unbounded text. `ports` accepts JSON arrays too, e.g.
 split on newlines into `logs`, together with `truncated` and the original byte
 count (`bytes`); invalid UTF-8 is replaced.
 
-Every list tool returns a single JSON array. `docker_list_containers` mirrors
-`docker ps`: without filters it returns the same containers as the CLI, and a
-`label` filter is sent in the CLI's map form. That matters on Docker Desktop
+Every list tool returns a single JSON array. `docker_list_containers`,
+`docker_list_images` and `docker_list_volumes` accept `format`: the default
+`summary` returns a compact `docker ps`-style row (no health-check logs, nested
+image object, labels or digests), while `full` returns the inspect-level object
+with each health-check log entry capped at 500 characters. `docker_list_containers`
+mirrors `docker ps`: without filters it returns the same containers as the CLI,
+and a `label` filter is sent in the CLI's map form. That matters on Docker Desktop
 hosts with the Kubernetes integration: the engine hides Kubernetes containers
 from unfiltered listings but reveals them for a `label` filter, so
 `docker_list_containers {"all": true, "filters": {"label":
