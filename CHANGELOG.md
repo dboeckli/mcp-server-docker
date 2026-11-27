@@ -5,6 +5,14 @@ Notable changes in this fork. Older releases are documented on
 
 ## [Unreleased]
 
+### Added
+
+- The server starts even when no Docker daemon is reachable: the client falls
+  back to the SDK's default API version, so `initialize` and `tools/list`
+  succeed and tool calls return a clear error instead of the process failing at
+  startup. This lets MCP directories and gateways enumerate the tools before a
+  daemon is available.
+
 ### Documentation and metadata
 
 - The repository is reported as a standalone project (detached from the upstream

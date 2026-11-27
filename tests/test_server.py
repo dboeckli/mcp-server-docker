@@ -176,6 +176,25 @@ def server(docker_client):
     return app
 
 
+@pytest.mark.anyio
+async def test_lifespan_starts_without_reachable_daemon(monkeypatch):
+    client = Docker()
+    calls = []
+
+    def fake_from_env(**kwargs):
+        calls.append(kwargs)
+        if "version" not in kwargs:
+            raise docker.errors.DockerException("no daemon")
+        return client
+
+    monkeypatch.setattr(server_module.docker, "from_env", fake_from_env)
+
+    async with server_module.lifespan(None) as context:
+        assert context.docker is client
+    assert client.closed
+    assert calls == [{}, {"version": docker.constants.DEFAULT_DOCKER_API_VERSION}]
+
+
 class FakeProcess:
     def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0):
         self.stdout = stdout
