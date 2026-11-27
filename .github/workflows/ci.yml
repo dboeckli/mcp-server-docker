@@ -19,18 +19,55 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-groups --frozen
+        run: uv sync --all-groups --locked --no-build
       - name: Check formatting
-        run: uv run ruff format --check src tests
+        run: uv run --locked --no-build ruff format --check src tests
       - name: Lint
-        run: uv run ruff check src tests
+        run: uv run --locked --no-build ruff check src tests
       - name: Test
-        run: uv run pytest --cov=mcp_server_docker --cov-report=term-missing --cov-fail-under=90
+        run: |
+          mkdir -p target/reports
+          uv run --locked --no-build pytest \
+            --cov=mcp_server_docker \
+            --cov-report=term-missing \
+            --cov-report=xml:target/reports/coverage.xml \
+            --junitxml=target/reports/junit.xml \
+            --cov-fail-under=90
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: test-reports
+          path: target/reports/
+          if-no-files-found: warn
+      - name: Check SonarCloud token
+        id: sonar-token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "${SONAR_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SONAR_TOKEN is not set; skipping SonarCloud analysis"
+          fi
+      - name: SonarCloud scan
+        if: >-
+          steps.sonar-token.outputs.enabled == 'true' &&
+          !startsWith(github.ref, 'refs/tags/') &&
+          (github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository)
+        uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   integration:
     name: Integration tests
@@ -44,9 +81,9 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-groups --frozen
+        run: uv sync --all-groups --locked --no-build
       - name: Run integration tests
-        run: uv run pytest -o addopts= -m integration
+        run: uv run --locked --no-build pytest -o addopts= -m integration
 
   docker:
     name: Docker image

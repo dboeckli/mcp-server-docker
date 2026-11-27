@@ -517,6 +517,10 @@ uv run ruff format --check src tests
 uv run ruff check src tests
 ```
 
+CI also writes `target/reports/coverage.xml` and `target/reports/junit.xml`
+and runs SonarCloud analysis when the `SONAR_TOKEN` repository secret is
+configured.
+
 Run the Docker integration tests (requires Docker and Buildx):
 
 ```bash
