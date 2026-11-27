@@ -76,7 +76,7 @@ Environment = Annotated[
     dict[str, str] | None, Field(description="Environment variables dictionary")
 ]
 PortBindings = Annotated[
-    dict[str, int | list[int] | tuple[str, int] | None] | None,
+    dict[str, int | list[int | str] | None] | None,
     Field(description="Container-to-host port bindings"),
 ]
 VolumeMappings = Annotated[
@@ -113,12 +113,58 @@ def _container_label_filters(
     return {"label": {label: True for label in filters.label}}
 
 
+def _normalize_ports(
+    ports: dict[str, int | list[int | str] | None] | None,
+) -> dict[str, Any] | None:
+    """Restore docker-py's ``(host_ip, host_port)`` tuple from a JSON array.
+
+    MCP clients can only send arrays, so the schema accepts a two-item list for
+    the host-IP form and this converts it back before the SDK sees it.
+    """
+    if ports is None:
+        return None
+    normalized: dict[str, Any] = {}
+    for container_port, binding in ports.items():
+        if (
+            isinstance(binding, list)
+            and len(binding) == 2
+            and isinstance(binding[0], str)
+            and isinstance(binding[1], int)
+        ):
+            normalized[container_port] = (binding[0], binding[1])
+        else:
+            normalized[container_port] = binding
+    return normalized
+
+
 _CLI_ENCODING = "utf-8"
 
 
 def _decode_cli_output(data: bytes) -> str:
     """Decode CLI or container output as UTF-8, replacing malformed bytes."""
     return data.decode(_CLI_ENCODING, errors="replace")
+
+
+MAX_ATTACHED_TEXT_BYTES = 20 * 1024
+
+
+def _run_result(value: Any, *, detach: bool) -> dict[str, Any]:
+    """Normalize Docker SDK run results for attached and detached execution."""
+    if detach:
+        return docker_to_dict(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        total = len(raw)
+        selected = (
+            raw[-MAX_ATTACHED_TEXT_BYTES:] if total > MAX_ATTACHED_TEXT_BYTES else raw
+        )
+        return {
+            "mode": "attached",
+            "output": _decode_cli_output(selected),
+            "truncated": total > MAX_ATTACHED_TEXT_BYTES,
+            "bytes": total,
+        }
+    raise TypeError(f"Attached Docker run returned unexpected type: {type(value)}")
 
 
 def _run_docker(
@@ -434,7 +480,7 @@ def docker_create_container(
         dict[str, str] | None, Field(description="Environment variables dictionary")
     ] = None,
     ports: Annotated[
-        dict[str, int | list[int] | tuple[str, int] | None] | None,
+        dict[str, int | list[int | str] | None] | None,
         Field(description="Container-to-host port bindings"),
     ] = None,
     volumes: Annotated[
@@ -457,7 +503,7 @@ def docker_create_container(
             command=command,
             network=network,
             environment=environment,
-            ports=ports,
+            ports=_normalize_ports(ports),
             volumes=volumes,
             labels=labels,
             auto_remove=auto_remove,
@@ -491,7 +537,7 @@ def docker_run_container(
         dict[str, str] | None, Field(description="Environment variables dictionary")
     ] = None,
     ports: Annotated[
-        dict[str, int | list[int] | tuple[str, int] | None] | None,
+        dict[str, int | list[int | str] | None] | None,
         Field(description="Container-to-host port bindings"),
     ] = None,
     volumes: Annotated[
@@ -505,21 +551,20 @@ def docker_run_container(
         bool, Field(description="Automatically remove the container")
     ] = False,
 ) -> dict[str, Any]:
-    return docker_to_dict(
-        _client(ctx).containers.run(
-            image=image,
-            detach=detach,
-            name=name,
-            entrypoint=entrypoint,
-            command=command,
-            network=network,
-            environment=environment,
-            ports=ports,
-            volumes=volumes,
-            labels=labels,
-            auto_remove=auto_remove,
-        )
+    result = _client(ctx).containers.run(
+        image=image,
+        detach=detach,
+        name=name,
+        entrypoint=entrypoint,
+        command=command,
+        network=network,
+        environment=environment,
+        ports=_normalize_ports(ports),
+        volumes=volumes,
+        labels=labels,
+        auto_remove=auto_remove,
     )
+    return _run_result(result, detach=detach)
 
 
 @tool(
@@ -559,7 +604,7 @@ def docker_recreate_container(
             command=command,
             network=network,
             environment=environment,
-            ports=ports,
+            ports=_normalize_ports(ports),
             volumes=volumes,
             labels=labels,
             auto_remove=auto_remove,
@@ -799,7 +844,9 @@ def docker_build_image(
     tag: Annotated[str, Field(description="Image tag")],
     dockerfile: Annotated[str | None, Field(description="Path to Dockerfile")] = None,
 ) -> dict[str, Any]:
-    image, logs = _client(ctx).images.build(path=path, tag=tag, dockerfile=dockerfile)
+    image, logs = _client(ctx).images.build(
+        path=path, tag=tag, dockerfile=dockerfile, rm=True, forcerm=True
+    )
     return {"image": docker_to_dict(image), "logs": list(logs)}
 
 

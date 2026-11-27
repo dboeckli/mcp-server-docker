@@ -33,6 +33,13 @@ An MCP server for managing Docker with natural language!
 - Docker/Buildx integration tests and coverage in CI
 - Automated dependency updates (Dependabot and Renovate)
 
+## 🔭 Upstream & fork tracking
+
+We track the upstream base repository and, in addition, the `X1pheR` community
+fork, which carries ready branches for several open upstream issues. Monitored
+sources, the branch-to-issue map and the commands to check for new activity are
+documented in [docs/upstream-tracking.md](docs/upstream-tracking.md).
+
 ## 🧱 Use case: Docker sandbox
 
 This server was originally designed for direct Docker management from an MCP
@@ -219,6 +226,13 @@ fresh response, so no environment value is included.
 snapshot (`stream=false`), so it never blocks a tool call; the
 `docker://containers/{container_id}/stats`
 resource stays available for clients that read resources.
+
+`docker_run_container` with `detach=false` returns `mode: "attached"`, the
+decoded `output`, the original byte count (`bytes`) and a `truncated` flag.
+Only the last 20 KiB of raw output are returned, so an attached process cannot
+flood the client with unbounded text. `ports` accepts JSON arrays too, e.g.
+`{"80/tcp": 8080}`, `{"80/tcp": [8080, 8081]}` for several host ports, or
+`{"80/tcp": ["127.0.0.1", 8080]}` for a host IP and port.
 
 Every list tool returns a single JSON array. `docker_list_containers` mirrors
 `docker ps`: without filters it returns the same containers as the CLI, and a
