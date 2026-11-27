@@ -3,6 +3,50 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Added
+
+- `--disable-destructive` (alias `--no-destructive`, env
+  `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE` / `MCP_SERVER_DOCKER_NO_DESTRUCTIVE`)
+  registers every tool except the five annotated with `destructiveHint=true`, so
+  an agent can create, pull, start and stop without being able to remove or
+  recreate resources. `--read-only` stays the stricter mode and wins.
+- `--enable-tools` and `--disable-tools` (repeatable or comma-separated, with
+  `MCP_SERVER_DOCKER_ENABLE_TOOLS` / `MCP_SERVER_DOCKER_DISABLE_TOOLS`) override
+  the modes per tool name; naming a tool in both lists aborts startup.
+- `v*` tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
+  attestations for the GHCR image; the README explains how to inspect them.
+
+## [0.11.0] - 2026-11-27
+
+### Added
+
+- The server starts even when no Docker daemon is reachable: the client falls
+  back to the SDK's default API version, so `initialize` and `tools/list`
+  succeed and tool calls return a clear error instead of the process failing at
+  startup. This lets MCP directories and gateways enumerate the tools before a
+  daemon is available.
+
+### Documentation and metadata
+
+- The repository is reported as a standalone project (detached from the upstream
+  fork network on 2026-11-27), with a maintenance-status section, status badges
+  and repository topics; `AGENTS.md` and `docs/upstream-tracking.md` use
+  standalone wording.
+- `glama.json` carries the full server metadata used by MCP directory listings.
+- The README contains the `mcp-name` token used by the official MCP Registry to
+  verify ownership of the PyPI package.
+- `server.json` carries the official MCP Registry metadata, and the image label
+  `io.modelcontextprotocol.server.name` lets the registry verify the GHCR image
+  as well.
+
+### Packaging
+
+- PyPI package `mcp-server-docker-dboeckli==0.11.0`
+- Container image `ghcr.io/dboeckli/mcp-server-docker:0.11.0`
+- MCP Registry entry `io.github.dboeckli/mcp-server-docker`
+
 ## [0.10.0] - 2026-11-27
 
 ### Added

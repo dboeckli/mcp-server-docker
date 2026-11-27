@@ -2,9 +2,10 @@
 
 ## What this repo is
 
-- Fork of
-  [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
-  Fixes are maintained here only and are **not** contributed upstream. Monitored
+- Standalone continuation of
+  [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker),
+  detached from its fork network. Fixes are maintained here only and are **not**
+  contributed upstream. Monitored
   repos/branches and the issue map are in `docs/upstream-tracking.md` (base
   `ckreiling`, reference fork
   [`X1pheR/mcp-server-docker`](https://github.com/X1pheR/mcp-server-docker)).
@@ -37,16 +38,18 @@ uv build
 
 - `src/mcp_server_docker/server.py` is the whole server: `@tool` registrations,
   prompt, resources and helpers. `output_schemas.py` serializes Docker models,
-  `settings.py` implements read-only mode, `redaction.py` redacts `Config.Env`.
+  `settings.py` implements the safety modes (read-only, no-destructive, per-tool
+  enable/disable lists); `redaction.py` redacts `Config.Env`.
 - Settings are read at **import time** and tools are registered (or omitted) then.
-  Read-only mode removes non-read-only tools entirely. To test another mode,
-  spawn a new process.
+  A safety mode removes tools entirely (they are not registered). To test
+  another mode, spawn a new process.
 - Tools get the client via `_client(ctx)`; the lifespan opens `docker.from_env()`.
 - List-returning tools return a Python list; the `@tool` wrapper emits one JSON
   array text block plus `structured_content={"result": [...]}`. Direct Python
   callers get the plain return value.
 - Read-only tools must set `ToolAnnotations(read_only_hint=True, ...)` or they
-  disappear under `--read-only`.
+  disappear under `--read-only`. Destructive tools must set
+  `destructive_hint=True` or `--disable-destructive` keeps them.
 - `docker_to_dict(obj, overrides=None, format="summary"|"full")`: list tools
   default to `summary`, single-object tools to `full`. `full` caps each
   `Health.Log` entry at 500 characters.
@@ -66,9 +69,10 @@ uv build
   are passed (for example `format=`).
 - `tests/test_output_schemas.py` exercises the real serializers with real docker
   models; `tests/test_recreate.py` uses `Mock(spec=Container)`.
-- `tests/test_settings.py` covers read-only gating.
-- Tool counts are asserted in tests (36 total, 22 read-only). Update them when
-  adding/removing tools; also update `README.md` tool docs.
+- `tests/test_settings.py` covers the safety-mode gating.
+- Tool counts are asserted in tests (36 total, 22 read-only, 31 without
+  destructive tools). Update them when adding/removing tools; also update
+  `README.md` tool docs.
 - The `production_stdio` tests spawn `uv run mcp-server-docker`; they need a
   working project venv (or `UV_PROJECT_ENVIRONMENT`).
 - After changing `_version.py`, refresh editable metadata or `test_version`
@@ -95,6 +99,9 @@ uv build
   the `test-reports` artifact, and skips the Sonar scan when `SONAR_TOKEN` is
   missing, on fork PRs and on tag pushes. The quality gate is **not** enforced by
   CI; check Sonar separately.
+- Tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
+  attestations; `README.md` documents `docker buildx imagetools inspect`. Keep
+  them enabled when changing the image job.
 - Intentionally open Sonar items: Dockerfile root user (`docker:S6471`),
   14-parameter `docker_recreate_container` (`python:S107`), recreate cognitive
   complexity (`python:S3776`).
@@ -102,13 +109,18 @@ uv build
 ### Release
 
 - Version lives only in `src/mcp_server_docker/_version.py`; the release workflow
-  rejects a tag that does not match it.
-- Steps: bump `_version.py`; update every version pin in README install snippets;
-  add a `[Unreleased]` CHANGELOG entry; merge; then tag `vX.Y.Z` and push the tag.
+  rejects a tag that does not match it. `server.json` (official MCP Registry) is
+  checked against it by `tests/test_version.py`.
+- Steps: bump `_version.py` and the `server.json` version/tag; update every
+  version pin in README install snippets; add a CHANGELOG entry; merge; then tag
+  `vX.Y.Z` and push the tag.
 - A `v*` tag triggers both workflows: `ci.yml` publishes
   `ghcr.io/dboeckli/mcp-server-docker:X.Y.Z`; `release.yml` tests, builds
   wheel/sdist, publishes PyPI `mcp-server-docker-dboeckli`, and creates the
   GitHub release. Update the release body from `CHANGELOG.md` if needed.
+- After both workflows finish, publish the registry entry with
+  `mcp-publisher login github` and `mcp-publisher publish` (namespace
+  `io.github.dboeckli`). It fails if the PyPI package or the image tag is missing.
 - Do not tag before the version bump is on `main`.
 
 ## Workflow
@@ -116,5 +128,5 @@ uv build
 - Use a `feature/<issue>-<short-text>` branch; never commit or push without
   explicit approval. Before a push, write `target/review/changes.patch`
   (`git diff <base>`) and open it in IntelliJ.
-- This is a downstream fork: do not open upstream PRs or push to `ckreiling`;
+- This is a downstream project: do not open upstream PRs or push to `ckreiling`;
   keep `docs/upstream-tracking.md` current when addressing a tracked issue.

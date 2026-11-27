@@ -1,22 +1,44 @@
 # 🐋 Docker MCP server
 
-An MCP server for managing Docker with natural language!
+<!-- mcp-name: io.github.dboeckli/mcp-server-docker -->
 
-> This is the [`dboeckli` fork](https://github.com/dboeckli/mcp-server-docker) of
-> [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
-> Credit for the original server belongs to Christian Kreiling and the upstream
-> contributors. This fork adds the Buildx tools and related maintenance.
+[![CI](https://github.com/dboeckli/mcp-server-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/dboeckli/mcp-server-docker/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mcp-server-docker-dboeckli)](https://pypi.org/project/mcp-server-docker-dboeckli/)
+[![ghcr.io](https://img.shields.io/badge/ghcr.io-mcp--server--docker-blue)](https://github.com/dboeckli/mcp-server-docker/pkgs/container/mcp-server-docker)
+[![License: GPL-3.0-only](https://img.shields.io/github/license/dboeckli/mcp-server-docker)](LICENSE)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=dboeckli_mcp-server-docker&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=dboeckli_mcp-server-docker)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=dboeckli_mcp-server-docker&metric=coverage)](https://sonarcloud.io/summary/new_code?id=dboeckli_mcp-server-docker)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=dboeckli_mcp-server-docker&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=dboeckli_mcp-server-docker)
+[![Docker MCP Server on Glama](https://glama.ai/mcp/servers/dboeckli/mcp-server-docker/badges/score.svg)](https://glama.ai/mcp/servers/dboeckli/mcp-server-docker)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.dboeckli/mcp-server-docker)
+
+An MCP server for managing Docker with natural language — maintained, with
+Buildx tooling and bounded, LLM-friendly output.
+
+```bash
+uvx --from mcp-server-docker-dboeckli mcp-server-docker
+```
+
+> **Maintenance status:** the upstream project
+> [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker)
+> last released `v0.3.0` and is effectively unmaintained. This repository is its
+> maintained continuation: it keeps the upstream Docker MCP surface and is
+> released independently as `mcp-server-docker-dboeckli` (PyPI) and
+> `ghcr.io/dboeckli/mcp-server-docker` (GHCR).
 >
-> This repository is independently maintained by
-> [dboeckli](https://github.com/dboeckli). It is not affiliated with or endorsed
-> by the upstream maintainer, Docker, Inc., or the Model Context Protocol
-> project. Fixes in this fork are maintained here only and are not contributed
-> back upstream.
+> Credit for the original server belongs to Christian Kreiling and the upstream
+> contributors. Maintained by [dboeckli](https://github.com/dboeckli); not
+> affiliated with or endorsed by the upstream maintainer, Docker, Inc., or the
+> Model Context Protocol project. Fixes are maintained here only and are not
+> contributed back upstream.
 
-## 🧭 Why this fork exists
+See the [Quickstart](#-quickstart) below for Claude Desktop, container and
+source setups.
 
-This fork keeps the upstream Docker MCP surface and adds what is needed to run
-it from agent sandboxes and day-to-day LLM clients. It is based on upstream
+## 🧭 Why this repository exists
+
+This repository keeps the upstream Docker MCP surface and adds what is needed to
+run it from agent sandboxes and day-to-day LLM clients. It is based on upstream
 `main` at `57a7df2` (v0.3.0) and is released independently as
 `mcp-server-docker-dboeckli` (PyPI) and
 `ghcr.io/dboeckli/mcp-server-docker` (GHCR).
@@ -28,13 +50,14 @@ The differences that matter in practice:
   and attached-run output with `truncated`/`bytes` metadata.
 - **More read-only tools:** container health, processes, stats, events, disk
   usage, version and system info.
-- **Read-only mode** (`--read-only`) for gateway allow-listing.
+- **Safety modes** (`--read-only`, `--disable-destructive`) for gateway
+  allow-listing.
 - **Docker Desktop correctness:** label filters in the CLI map form and unset
   filter fields omitted instead of sent as `null`.
-- **Packaging:** PyPI package, GHCR image and fork-level release history.
+- **Packaging:** PyPI package, GHCR image and an independent release history.
 
-This is a downstream fork, not an upstream contribution channel: fixes are
-maintained here only and are not contributed back upstream. See
+This is an independent downstream project, not an upstream contribution channel:
+fixes are maintained here only and are not contributed back upstream. See
 [docs/upstream-tracking.md](docs/upstream-tracking.md) for the repositories we
 monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 
@@ -54,7 +77,7 @@ monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 - Docker sandbox users: expose the host Docker daemon and Buildx to a sandbox
   through an MCP gateway without mounting the Docker socket.
 
-## 🍴 What this fork adds
+## 🍴 What this repository adds
 
 - Buildx tools: `docker_buildx_list`, `docker_buildx_history`, and
   `docker_buildx_logs`
@@ -64,7 +87,7 @@ monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 - Docker/Buildx integration tests and coverage in CI
 - Automated dependency updates (Dependabot and Renovate)
 
-## 🔭 Upstream & fork tracking
+## 🔭 Upstream tracking
 
 We track the upstream base repository and, in addition, the `X1pheR` community
 fork, which carries ready branches for several open upstream issues. Monitored
@@ -87,7 +110,7 @@ example
 - Read-only tools (`docker_list_*`, `docker_fetch_container_logs`,
   `docker_buildx_*`) can be allow-listed; write tools should stay behind `ask`
   or be denied.
-- The Buildx tools added by this fork are meant for this setup: inspecting
+- The Buildx tools added by this repository are meant for this setup: inspecting
   builders, build history and build logs from inside the sandbox.
 
 This is not a sandbox boundary by itself: the host-side server still has access
@@ -113,7 +136,7 @@ Git.
 
 > The PyPI name **`mcp-server-docker`** belongs to the
 > [upstream project](https://github.com/ckreiling/mcp-server-docker) and stops at
-> `0.3.0`. It does not contain the Buildx tools of this fork.
+> `0.3.0`. It does not contain the Buildx tools of this repository.
 
 If you don't have `uv` installed, follow the installation instructions for your
 system:
@@ -127,7 +150,7 @@ Then add the following to your MCP servers file:
     "command": "uvx",
     "args": [
       "--from",
-      "mcp-server-docker-dboeckli==0.10.0",
+      "mcp-server-docker-dboeckli==0.11.0",
       "mcp-server-docker"
     ]
   }
@@ -143,7 +166,7 @@ Every release attaches the built wheel and sdist. This works without PyPI and
 without cloning the repository:
 
 ```bash
-uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.10.0/mcp_server_docker_dboeckli-0.10.0-py3-none-any.whl \
+uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.11.0/mcp_server_docker_dboeckli-0.11.0-py3-none-any.whl \
   mcp-server-docker
 ```
 
@@ -162,7 +185,7 @@ PyPI or wheel install.
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.11.0",
       "mcp-server-docker"
     ]
   }
@@ -180,13 +203,13 @@ image is published to GHCR:
 ```bash
 docker run -i --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/dboeckli/mcp-server-docker:0.10.0
+  ghcr.io/dboeckli/mcp-server-docker:0.11.0
 ```
 
 Alternatively, build the image locally:
 
 ```bash
-docker build -t mcp-server-docker:0.10.0 .
+docker build -t mcp-server-docker:0.11.0 .
 ```
 
 And then add the following to your MCP servers file:
@@ -201,7 +224,7 @@ And then add the following to your MCP servers file:
       "--rm",
       "-v",
       "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/dboeckli/mcp-server-docker:0.10.0"
+      "ghcr.io/dboeckli/mcp-server-docker:0.11.0"
     ]
   }
 }
@@ -213,6 +236,30 @@ the Docker CLI, so the Buildx tools only work when the server runs where the
 CLI is installed.
 
 </details>
+
+## 🔏 Verifying the image
+
+Release tags (`v*`) publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
+attestations next to the image. Pulling the image is unchanged; inspect the
+attestations with:
+
+```bash
+docker buildx imagetools inspect ghcr.io/dboeckli/mcp-server-docker:0.11.0 \
+  --format '{{json .Provenance}}'
+
+docker buildx imagetools inspect ghcr.io/dboeckli/mcp-server-docker:0.11.0 \
+  --format '{{json .SBOM}}'
+```
+
+The provenance records the source repository, the commit and the build
+arguments; the SBOM lists the packages in the image. Narrow the output with
+`.Provenance.SLSA` or `.SBOM.SPDX`, for example
+`--format '{{json .SBOM.SPDX}}'`. Branch and pull-request builds are not
+attested, so only release tags carry these statements.
+
+Attestations prove what was built, not what the container may do: the image
+still mounts the host Docker socket and is as privileged as the daemon it talks
+to. Keep the sandbox/gateway boundary in place.
 
 ## 📔 Resources
 
@@ -402,43 +449,64 @@ lets the LLM see the current state, which is useful for cleanup.
 This prompt is not required to use the server; the tools work directly without
 it.
 
-## 🔒 Read-only mode
+## 🔒 Safety modes
 
-Start the server with `--read-only`, or set
-`MCP_SERVER_DOCKER_READ_ONLY=1`, to expose only tools annotated with
-`readOnlyHint=true`. Write and destructive tools are not registered at all:
-they are absent from `tools/list` and calls to them return `Unknown tool`.
+Three modes decide which tools are registered. A filtered tool is absent from
+`tools/list`, and calling it returns `Unknown tool`.
 
-- Default: all 36 tools.
-- Read-only: the 22 read-only tools, including all `docker_list_*`, log, stats,
-  inspect, `docker_container_health`, `docker_events_list`, disk-usage, and
-  Buildx inspection tools.
-- The container log/stats resources and the `docker_compose` prompt remain
-  available.
+| Mode | Flag / env | Tools |
+| --- | --- | --- |
+| Default | – | 36 |
+| No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 31 |
+| Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 22 |
+
+- **No destructive** removes the five tools annotated with
+  `destructiveHint=true` (`docker_remove_container`, `docker_remove_image`,
+  `docker_remove_network`, `docker_remove_volume`,
+  `docker_recreate_container`). Creating, pulling, starting and stopping
+  containers still works. `--no-destructive` and
+  `MCP_SERVER_DOCKER_NO_DESTRUCTIVE` are accepted as synonyms.
+- **Read-only** exposes only tools annotated with `readOnlyHint=true`: all
+  `docker_list_*`, log, stats, inspect, `docker_container_health`,
+  `docker_events_list`, disk usage and the Buildx inspection tools.
+- Read-only is the stricter mode and wins when both are set.
+- The container log/stats resources and the `docker_compose` prompt stay
+  available in every mode.
+
+Per-tool overrides on top of the modes:
+
+- `--enable-tools docker_version,docker_system_info` (repeatable,
+  `MCP_SERVER_DOCKER_ENABLE_TOOLS`) registers the named tools regardless of the
+  mode above.
+- `--disable-tools docker_stop_container` (repeatable,
+  `MCP_SERVER_DOCKER_DISABLE_TOOLS`) removes the named tools, unless the same
+  tool is also enabled.
+- Naming a tool in both lists aborts startup with an error.
 
 Example with `uvx`:
 
 ```json
 "args": [
   "--from",
-  "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
+  "git+https://github.com/dboeckli/mcp-server-docker@v0.11.0",
   "mcp-server-docker",
-  "--read-only"
+  "--disable-destructive"
 ]
 ```
 
-Or with the environment variable:
+Or with the environment variables:
 
 ```json
 "env": {
-  "MCP_SERVER_DOCKER_READ_ONLY": "1"
+  "MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE": "1",
+  "MCP_SERVER_DOCKER_DISABLE_TOOLS": "docker_stop_container"
 }
 ```
 
-For the sbx MCP gateway, append `--read-only` to the comma-separated `--args`
-list, e.g. `sbx mcp add docker --args "--from,...,mcp-server-docker,--read-only"`.
+For the sbx MCP gateway, append the flag to the comma-separated `--args` list,
+e.g. `sbx mcp add docker --args "--from,...,mcp-server-docker,--disable-destructive"`.
 
-Read-only mode is a best-effort guardrail, not a sandbox boundary. The process
+These modes are best-effort guardrails, not a sandbox boundary. The process
 still has host Docker access; keep gateway policy and sandbox isolation in place.
 
 ## 🚧 Disclaimers
@@ -482,7 +550,7 @@ Simply set a `ssh://` host URL in the MCP server definition:
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.11.0",
       "mcp-server-docker"
     ],
     "env": {
@@ -552,10 +620,10 @@ After setting up devbox you can configure your Claude MCP config to use it:
 This project is distributed under the **GNU General Public License v3.0**
 (GPL-3.0-only); see [LICENSE](LICENSE).
 
-It is a modified fork of
+It is a modified version of
 [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
 Upstream copyright and authorship remain with Christian Kreiling and the
-upstream contributors. Modifications in this fork are maintained by
+upstream contributors. Modifications in this repository are maintained by
 [dboeckli](https://github.com/dboeckli) under the same license. See
 [NOTICE](NOTICE) and [CHANGELOG.md](CHANGELOG.md) for the recorded changes.
 

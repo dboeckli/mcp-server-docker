@@ -243,7 +243,10 @@ def _parse_du_summary(output: str) -> dict[str, str | None]:
 @asynccontextmanager
 async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
     """Create and close the Docker client for one server lifetime."""
-    client = docker.from_env()
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        client = docker.from_env(version=docker.constants.DEFAULT_DOCKER_API_VERSION)
     try:
         yield AppContext(docker=client)
     finally:
@@ -296,7 +299,7 @@ def tool(
             result = call(*fn_args, **fn_kwargs)
             return _json_list_result(result) if isinstance(result, list) else result
 
-        if is_tool_enabled(kwargs.get("annotations"), settings):
+        if is_tool_enabled(kwargs.get("annotations"), settings, fn.__name__):
             app.tool(*args, **kwargs)(mcp_tool)
         # Direct callers keep the plain Python return value.
         return call

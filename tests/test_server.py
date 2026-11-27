@@ -176,6 +176,25 @@ def server(docker_client):
     return app
 
 
+@pytest.mark.anyio
+async def test_lifespan_starts_without_reachable_daemon(monkeypatch):
+    client = Docker()
+    calls = []
+
+    def fake_from_env(**kwargs):
+        calls.append(kwargs)
+        if "version" not in kwargs:
+            raise docker.errors.DockerException("no daemon")
+        return client
+
+    monkeypatch.setattr(server_module.docker, "from_env", fake_from_env)
+
+    async with server_module.lifespan(None) as context:
+        assert context.docker is client
+    assert client.closed
+    assert calls == [{}, {"version": docker.constants.DEFAULT_DOCKER_API_VERSION}]
+
+
 class FakeProcess:
     def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0):
         self.stdout = stdout
@@ -1060,6 +1079,31 @@ async def test_production_stdio_read_only_cli_flag():
     assert len(names) == 22
     assert "docker_remove_container" not in names
     assert "docker_container_stats" in names
+
+
+@pytest.mark.anyio
+async def test_production_stdio_disable_destructive_exposes_only_safe_tools():
+    params = StdioServerParameters(
+        command="uv",
+        args=["run", "mcp-server-docker", "--disable-destructive"],
+    )
+    async with Client(stdio_client(params), raise_exceptions=True) as client:
+        tools = await client.list_tools()
+        blocked = await client.call_tool(
+            "docker_remove_container", {"container_id": "x"}
+        )
+    names = {tool.name for tool in tools.tools}
+    assert len(names) == 31
+    assert {
+        "docker_remove_container",
+        "docker_remove_image",
+        "docker_remove_network",
+        "docker_remove_volume",
+        "docker_recreate_container",
+    }.isdisjoint(names)
+    assert {"docker_create_container", "docker_stop_container"} <= names
+    assert blocked.is_error
+    assert "Unknown tool" in blocked.content[0].text
 
 
 def _inspectable(calls, kind, attrs):
