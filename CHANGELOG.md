@@ -3,7 +3,7 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
-## [Unreleased]
+## [0.12.0] - 2026-11-27
 
 ### Added
 
@@ -17,9 +17,16 @@ Notable changes in this fork. Older releases are documented on
   the modes per tool name; naming a tool in both lists aborts startup.
 - `v*` tag builds publish SLSA provenance (`mode=max`) and an SPDX SBOM as OCI
   attestations for the GHCR image; the README explains how to inspect them.
-
 - `registry-publish.yml` publishes `server.json` to the official MCP Registry
   once both tag workflows succeeded, replacing the manual `mcp-publisher` step.
+
+### Packaging
+
+- PyPI package `mcp-server-docker-dboeckli==0.12.0`
+- Container image `ghcr.io/dboeckli/mcp-server-docker:0.12.0` with SLSA provenance
+  and an SPDX SBOM
+- MCP Registry entry `io.github.dboeckli/mcp-server-docker`, published by the
+  release workflow from now on
 
 ## [0.11.0] - 2026-11-27
 
