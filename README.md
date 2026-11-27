@@ -234,6 +234,10 @@ flood the client with unbounded text. `ports` accepts JSON arrays too, e.g.
 `{"80/tcp": 8080}`, `{"80/tcp": [8080, 8081]}` for several host ports, or
 `{"80/tcp": ["127.0.0.1", 8080]}` for a host IP and port.
 
+`docker_fetch_container_logs` returns at most the last 20 KiB of raw log bytes,
+split on newlines into `logs`, together with `truncated` and the original byte
+count (`bytes`); invalid UTF-8 is replaced.
+
 Every list tool returns a single JSON array. `docker_list_containers` mirrors
 `docker ps`: without filters it returns the same containers as the CLI, and a
 `label` filter is sent in the CLI's map form. That matters on Docker Desktop
