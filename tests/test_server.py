@@ -90,8 +90,9 @@ class Images(Collection):
 
 
 class Response:
-    def __init__(self, payload: Any):
+    def __init__(self, payload: Any, status_code: int = 200):
         self._payload = payload
+        self.status_code = status_code
 
     def json(self) -> Any:
         return self._payload
@@ -101,13 +102,25 @@ class Api:
     def __init__(self, calls: list[tuple[str, Any]]):
         self.calls = calls
         self.payload: Any = []
+        self.base_url = "http://docker"
+        self.status_code = 200
+        self.error: Exception | None = None
+        self.timeouts: list[float | None] = []
 
     def _url(self, path: str) -> str:
         return f"http://docker{path}"
 
-    def get(self, url: str, params: dict[str, Any] | None = None) -> Response:
+    def get(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> Response:
         self.calls.append(("api.get", (url, params)))
-        return Response(self.payload)
+        self.timeouts.append(timeout)
+        if self.error is not None:
+            raise self.error
+        return Response(self.payload, self.status_code)
 
     def _result(
         self, response: Response, json: bool = False, binary: bool = False
@@ -684,12 +697,64 @@ async def test_version_and_curated_system_info(server, docker_client):
 
 
 @pytest.mark.anyio
+async def test_docker_status_reports_reachable_daemon(server, docker_client):
+    docker_client.api.payload = {"Version": "29.9.3", "ApiVersion": "1.52"}
+
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_status", {})
+
+    payload = result.structured_content
+    assert result.is_error is False
+    assert payload["status"] == "ok"
+    assert payload["server"] == {
+        "name": "docker-server",
+        "version": server_module.__version__,
+    }
+    assert payload["docker"]["reachable"] is True
+    assert payload["docker"]["version"] == "29.9.3"
+    assert payload["docker"]["api_version"] == "1.52"
+    assert isinstance(payload["docker"]["latency_ms"], int)
+    assert payload["checked_at"].endswith("Z")
+    assert docker_client.api.timeouts == [2.0]
+
+
+@pytest.mark.anyio
+async def test_docker_status_reports_degraded_without_leaking_host_details(
+    server, docker_client
+):
+    docker_client.api.error = OSError(
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
+    )
+
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_status", {})
+
+    payload = result.structured_content
+    assert result.is_error is False
+    assert payload["status"] == "degraded"
+    assert payload["docker"]["reachable"] is False
+    assert "docker.sock" not in payload["docker"]["error"]
+    assert "Cannot connect" in payload["docker"]["error"]
+
+
+@pytest.mark.anyio
+async def test_docker_status_reports_degraded_on_http_error(server, docker_client):
+    docker_client.api.status_code = 500
+
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_status", {})
+
+    assert result.structured_content["status"] == "degraded"
+    assert "HTTP 500" in result.structured_content["docker"]["error"]
+
+
+@pytest.mark.anyio
 async def test_tools_have_flat_schemas_and_container_call_semantics(
     server, docker_client
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 36
+        assert len(tools.tools) == 37
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "docker_buildx_list"
         )
@@ -708,7 +773,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
-        for name in ("docker_version", "docker_system_info"):
+        for name in ("docker_version", "docker_system_info", "docker_status"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
             assert tool.annotations.idempotent_hint
@@ -1029,7 +1094,7 @@ async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
-    assert len(tools.tools) == 36
+    assert len(tools.tools) == 37
     assert "docker_list_containers" in {tool.name for tool in tools.tools}
     assert "docker_container_stats" in {tool.name for tool in tools.tools}
 
@@ -1048,7 +1113,7 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
         blocked = await client.call_tool("docker_create_container", {"image": "alpine"})
 
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 22
+    assert len(names) == 23
     assert all(tool.annotations.read_only_hint for tool in tools.tools)
     assert "docker_create_container" not in names
     assert {
@@ -1076,7 +1141,7 @@ async def test_production_stdio_read_only_cli_flag():
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 22
+    assert len(names) == 23
     assert "docker_remove_container" not in names
     assert "docker_container_stats" in names
 
@@ -1093,7 +1158,7 @@ async def test_production_stdio_disable_destructive_exposes_only_safe_tools():
             "docker_remove_container", {"container_id": "x"}
         )
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 31
+    assert len(names) == 32
     assert {
         "docker_remove_container",
         "docker_remove_image",
