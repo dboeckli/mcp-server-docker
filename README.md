@@ -6,6 +6,37 @@ An MCP server for managing Docker with natural language!
 > [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
 > Credit for the original server belongs to Christian Kreiling and the upstream
 > contributors. This fork adds the Buildx tools and related maintenance.
+>
+> This repository is independently maintained by
+> [dboeckli](https://github.com/dboeckli). It is not affiliated with or endorsed
+> by the upstream maintainer, Docker, Inc., or the Model Context Protocol
+> project. Fixes in this fork are maintained here only and are not contributed
+> back upstream.
+
+## 🧭 Why this fork exists
+
+This fork keeps the upstream Docker MCP surface and adds what is needed to run
+it from agent sandboxes and day-to-day LLM clients. It is based on upstream
+`main` at `57a7df2` (v0.3.0) and is released independently as
+`mcp-server-docker-dboeckli` (PyPI) and
+`ghcr.io/dboeckli/mcp-server-docker` (GHCR).
+
+The differences that matter in practice:
+
+- **Buildx tooling:** builders, build history, cache usage, inspection and build logs.
+- **Bounded, LLM-friendly output:** compact `summary` listings plus capped log
+  and attached-run output with `truncated`/`bytes` metadata.
+- **More read-only tools:** container health, processes, stats, events, disk
+  usage, version and system info.
+- **Read-only mode** (`--read-only`) for gateway allow-listing.
+- **Docker Desktop correctness:** label filters in the CLI map form and unset
+  filter fields omitted instead of sent as `null`.
+- **Packaging:** PyPI package, GHCR image and fork-level release history.
+
+This is a downstream fork, not an upstream contribution channel: fixes are
+maintained here only and are not contributed back upstream. See
+[docs/upstream-tracking.md](docs/upstream-tracking.md) for the repositories we
+monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## 🪩 What can it do?
 
@@ -502,3 +533,18 @@ After setting up devbox you can configure your Claude MCP config to use it:
   }
 }
 ```
+
+## 📄 License
+
+This project is distributed under the **GNU General Public License v3.0**
+(GPL-3.0-only); see [LICENSE](LICENSE).
+
+It is a modified fork of
+[`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
+Upstream copyright and authorship remain with Christian Kreiling and the
+upstream contributors. Modifications in this fork are maintained by
+[dboeckli](https://github.com/dboeckli) under the same license. See
+[NOTICE](NOTICE) and [CHANGELOG.md](CHANGELOG.md) for the recorded changes.
+
+This repository is not affiliated with or endorsed by the upstream maintainer,
+Docker, Inc., or the Model Context Protocol project.
