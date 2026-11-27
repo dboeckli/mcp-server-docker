@@ -3,12 +3,19 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
-## [Unreleased]
+## [0.12.1] - 2026-11-27
 
 ### Changed
 
 - Release images are built for `linux/amd64` and `linux/arm64`; pull requests
   stay single-architecture and each platform carries its own provenance and SBOM.
+
+### Packaging
+
+- PyPI package `mcp-server-docker-dboeckli==0.12.1`
+- Container image `ghcr.io/dboeckli/mcp-server-docker:0.12.1` for `linux/amd64`
+  and `linux/arm64`
+- MCP Registry entry `io.github.dboeckli/mcp-server-docker`
 
 ## [0.12.0] - 2026-11-27
 
