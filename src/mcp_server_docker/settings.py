@@ -27,7 +27,6 @@ class ServerSettings:
 
 
 def is_tool_enabled(
-    name: str,
     annotations: ToolAnnotations | None,
     settings: ServerSettings,
 ) -> bool:

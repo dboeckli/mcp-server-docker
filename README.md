@@ -6,6 +6,37 @@ An MCP server for managing Docker with natural language!
 > [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
 > Credit for the original server belongs to Christian Kreiling and the upstream
 > contributors. This fork adds the Buildx tools and related maintenance.
+>
+> This repository is independently maintained by
+> [dboeckli](https://github.com/dboeckli). It is not affiliated with or endorsed
+> by the upstream maintainer, Docker, Inc., or the Model Context Protocol
+> project. Fixes in this fork are maintained here only and are not contributed
+> back upstream.
+
+## 🧭 Why this fork exists
+
+This fork keeps the upstream Docker MCP surface and adds what is needed to run
+it from agent sandboxes and day-to-day LLM clients. It is based on upstream
+`main` at `57a7df2` (v0.3.0) and is released independently as
+`mcp-server-docker-dboeckli` (PyPI) and
+`ghcr.io/dboeckli/mcp-server-docker` (GHCR).
+
+The differences that matter in practice:
+
+- **Buildx tooling:** builders, build history, cache usage, inspection and build logs.
+- **Bounded, LLM-friendly output:** compact `summary` listings plus capped log
+  and attached-run output with `truncated`/`bytes` metadata.
+- **More read-only tools:** container health, processes, stats, events, disk
+  usage, version and system info.
+- **Read-only mode** (`--read-only`) for gateway allow-listing.
+- **Docker Desktop correctness:** label filters in the CLI map form and unset
+  filter fields omitted instead of sent as `null`.
+- **Packaging:** PyPI package, GHCR image and fork-level release history.
+
+This is a downstream fork, not an upstream contribution channel: fixes are
+maintained here only and are not contributed back upstream. See
+[docs/upstream-tracking.md](docs/upstream-tracking.md) for the repositories we
+monitor and [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## 🪩 What can it do?
 
@@ -32,6 +63,13 @@ An MCP server for managing Docker with natural language!
 - A published PyPI package: `mcp-server-docker-dboeckli`
 - Docker/Buildx integration tests and coverage in CI
 - Automated dependency updates (Dependabot and Renovate)
+
+## 🔭 Upstream & fork tracking
+
+We track the upstream base repository and, in addition, the `X1pheR` community
+fork, which carries ready branches for several open upstream issues. Monitored
+sources, the branch-to-issue map and the commands to check for new activity are
+documented in [docs/upstream-tracking.md](docs/upstream-tracking.md).
 
 ## 🧱 Use case: Docker sandbox
 
@@ -89,7 +127,7 @@ Then add the following to your MCP servers file:
     "command": "uvx",
     "args": [
       "--from",
-      "mcp-server-docker-dboeckli==0.8.2",
+      "mcp-server-docker-dboeckli==0.10.0",
       "mcp-server-docker"
     ]
   }
@@ -105,7 +143,7 @@ Every release attaches the built wheel and sdist. This works without PyPI and
 without cloning the repository:
 
 ```bash
-uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.8.2/mcp_server_docker_dboeckli-0.8.2-py3-none-any.whl \
+uvx --from https://github.com/dboeckli/mcp-server-docker/releases/download/v0.10.0/mcp_server_docker_dboeckli-0.10.0-py3-none-any.whl \
   mcp-server-docker
 ```
 
@@ -124,7 +162,7 @@ PyPI or wheel install.
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.8.2",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
       "mcp-server-docker"
     ]
   }
@@ -142,13 +180,13 @@ image is published to GHCR:
 ```bash
 docker run -i --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/dboeckli/mcp-server-docker:0.8.2
+  ghcr.io/dboeckli/mcp-server-docker:0.10.0
 ```
 
 Alternatively, build the image locally:
 
 ```bash
-docker build -t mcp-server-docker:0.8.2 .
+docker build -t mcp-server-docker:0.10.0 .
 ```
 
 And then add the following to your MCP servers file:
@@ -163,7 +201,7 @@ And then add the following to your MCP servers file:
       "--rm",
       "-v",
       "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/dboeckli/mcp-server-docker:0.8.2"
+      "ghcr.io/dboeckli/mcp-server-docker:0.10.0"
     ]
   }
 }
@@ -220,9 +258,33 @@ snapshot (`stream=false`), so it never blocks a tool call; the
 `docker://containers/{container_id}/stats`
 resource stays available for clients that read resources.
 
-Every list tool returns a single JSON array. `docker_list_containers` mirrors
-`docker ps`: without filters it returns the same containers as the CLI, and a
-`label` filter is sent in the CLI's map form. That matters on Docker Desktop
+`docker_run_container` with `detach=false` returns `mode: "attached"`, the
+decoded `output`, the original byte count (`bytes`) and a `truncated` flag.
+Only the last 20 KiB of raw output are returned, so an attached process cannot
+flood the client with unbounded text. `ports` accepts JSON arrays too, e.g.
+`{"80/tcp": 8080}`, `{"80/tcp": [8080, 8081]}` for several host ports, or
+`{"80/tcp": ["127.0.0.1", 8080]}` for a host IP and port.
+
+`docker_fetch_container_logs` returns at most the last 20 KiB of raw log bytes,
+split on newlines into `logs`, together with `truncated` and the original byte
+count (`bytes`); invalid UTF-8 is replaced.
+
+`docker_recreate_container` keeps its original stop/remove/run behaviour by
+default. With `preserve_configuration=true` it rebuilds the container from its
+inspected configuration instead: environment, mounts/volume identity, networks,
+ports, labels, healthcheck and restart policy are preserved, the replacement
+image is checked before anything is removed, and the original configuration is
+restored if creating the replacement fails. In that mode pass only
+`container_id`/`name` and optionally `image` (omitted `image` reuses the current
+one); explicit overrides are rejected.
+
+Every list tool returns a single JSON array. `docker_list_containers`,
+`docker_list_images` and `docker_list_volumes` accept `format`: the default
+`summary` returns a compact `docker ps`-style row (no health-check logs, nested
+image object, labels or digests), while `full` returns the inspect-level object
+with each health-check log entry capped at 500 characters. `docker_list_containers`
+mirrors `docker ps`: without filters it returns the same containers as the CLI,
+and a `label` filter is sent in the CLI's map form. That matters on Docker Desktop
 hosts with the Kubernetes integration: the engine hides Kubernetes containers
 from unfiltered listings but reveals them for a `label` filter, so
 `docker_list_containers {"all": true, "filters": {"label":
@@ -359,7 +421,7 @@ Example with `uvx`:
 ```json
 "args": [
   "--from",
-  "git+https://github.com/dboeckli/mcp-server-docker@v0.8.2",
+  "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
   "mcp-server-docker",
   "--read-only"
 ]
@@ -420,7 +482,7 @@ Simply set a `ssh://` host URL in the MCP server definition:
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/dboeckli/mcp-server-docker@v0.8.2",
+      "git+https://github.com/dboeckli/mcp-server-docker@v0.10.0",
       "mcp-server-docker"
     ],
     "env": {
@@ -429,6 +491,11 @@ Simply set a `ssh://` host URL in the MCP server definition:
   }
 }
 ```
+
+## 📜 Changelog
+
+Release notes and the history of notable changes live in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## 💻 Development
 
@@ -449,6 +516,10 @@ uv run pytest --cov=mcp_server_docker --cov-report=term-missing
 uv run ruff format --check src tests
 uv run ruff check src tests
 ```
+
+CI also writes `target/reports/coverage.xml` and `target/reports/junit.xml`
+and runs SonarCloud analysis when the `SONAR_TOKEN` repository secret is
+configured.
 
 Run the Docker integration tests (requires Docker and Buildx):
 
@@ -475,3 +546,18 @@ After setting up devbox you can configure your Claude MCP config to use it:
   }
 }
 ```
+
+## 📄 License
+
+This project is distributed under the **GNU General Public License v3.0**
+(GPL-3.0-only); see [LICENSE](LICENSE).
+
+It is a modified fork of
+[`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
+Upstream copyright and authorship remain with Christian Kreiling and the
+upstream contributors. Modifications in this fork are maintained by
+[dboeckli](https://github.com/dboeckli) under the same license. See
+[NOTICE](NOTICE) and [CHANGELOG.md](CHANGELOG.md) for the recorded changes.
+
+This repository is not affiliated with or endorsed by the upstream maintainer,
+Docker, Inc., or the Model Context Protocol project.

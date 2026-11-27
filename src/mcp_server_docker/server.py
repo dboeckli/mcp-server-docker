@@ -4,13 +4,15 @@ import json
 import shutil
 import subprocess
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import wraps
 from typing import Annotated, Any, Literal
 
 import docker
+from docker.models.containers import Container
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -31,23 +33,20 @@ class AppContext:
     docker: docker.DockerClient
 
 
+_LABEL_FILTER_DESCRIPTION = "Filter by label, either `key` or `key=value` format"
+
+
 class ListContainersFilters(BaseModel):
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 class ListImagesFilters(BaseModel):
     dangling: bool | None = Field(None, description="Show dangling images")
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 class ListNetworksFilter(BaseModel):
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 class ListEventsFilters(BaseModel):
@@ -57,9 +56,7 @@ class ListEventsFilters(BaseModel):
     event: list[str] | None = Field(None, description="Filter by event action")
     container: list[str] | None = Field(None, description="Filter by container")
     image: list[str] | None = Field(None, description="Filter by image")
-    label: list[str] | None = Field(
-        None, description="Filter by label, either `key` or `key=value` format"
-    )
+    label: list[str] | None = Field(None, description=_LABEL_FILTER_DESCRIPTION)
 
 
 ContainerID = Annotated[str, Field(description="Container ID or name")]
@@ -76,7 +73,7 @@ Environment = Annotated[
     dict[str, str] | None, Field(description="Environment variables dictionary")
 ]
 PortBindings = Annotated[
-    dict[str, int | list[int] | tuple[str, int] | None] | None,
+    dict[str, int | list[int | str] | None] | None,
     Field(description="Container-to-host port bindings"),
 ]
 VolumeMappings = Annotated[
@@ -86,6 +83,16 @@ ContainerLabels = Annotated[
     dict[str, str] | list[str] | None, Field(description="Container labels")
 ]
 AutoRemove = Annotated[bool, Field(description="Automatically remove the container")]
+Format = Annotated[
+    Literal["summary", "full"],
+    Field(
+        description=(
+            "Output verbosity. `summary` returns a compact `docker ps`-style row "
+            "(no health-check logs, labels or image digests); `full` returns the "
+            "inspect-level object. Defaults to `summary` for listings."
+        )
+    ),
+]
 
 
 def _client(ctx: Context[AppContext]) -> docker.DockerClient:
@@ -110,7 +117,31 @@ def _container_label_filters(
     """
     if filters is None or not filters.label:
         return None
-    return {"label": {label: True for label in filters.label}}
+    return {"label": dict.fromkeys(filters.label, True)}
+
+
+def _normalize_ports(
+    ports: dict[str, int | list[int | str] | None] | None,
+) -> dict[str, Any] | None:
+    """Restore docker-py's ``(host_ip, host_port)`` tuple from a JSON array.
+
+    MCP clients can only send arrays, so the schema accepts a two-item list for
+    the host-IP form and this converts it back before the SDK sees it.
+    """
+    if ports is None:
+        return None
+    normalized: dict[str, Any] = {}
+    for container_port, binding in ports.items():
+        if (
+            isinstance(binding, list)
+            and len(binding) == 2
+            and isinstance(binding[0], str)
+            and isinstance(binding[1], int)
+        ):
+            normalized[container_port] = (binding[0], binding[1])
+        else:
+            normalized[container_port] = binding
+    return normalized
 
 
 _CLI_ENCODING = "utf-8"
@@ -119,6 +150,42 @@ _CLI_ENCODING = "utf-8"
 def _decode_cli_output(data: bytes) -> str:
     """Decode CLI or container output as UTF-8, replacing malformed bytes."""
     return data.decode(_CLI_ENCODING, errors="replace")
+
+
+MAX_ATTACHED_TEXT_BYTES = 20 * 1024
+
+
+def _run_result(value: Any, *, detach: bool) -> dict[str, Any]:
+    """Normalize Docker SDK run results for attached and detached execution."""
+    if detach:
+        return docker_to_dict(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        total = len(raw)
+        selected = (
+            raw[-MAX_ATTACHED_TEXT_BYTES:] if total > MAX_ATTACHED_TEXT_BYTES else raw
+        )
+        return {
+            "mode": "attached",
+            "output": _decode_cli_output(selected),
+            "truncated": total > MAX_ATTACHED_TEXT_BYTES,
+            "bytes": total,
+        }
+    raise TypeError(f"Attached Docker run returned unexpected type: {type(value)}")
+
+
+MAX_LOG_TEXT_BYTES = 20 * 1024
+
+
+def _bounded_log_output(raw: bytes) -> dict[str, Any]:
+    """Return a bounded text suffix with original size and truncation evidence."""
+    total = len(raw)
+    selected = raw[-MAX_LOG_TEXT_BYTES:] if total > MAX_LOG_TEXT_BYTES else raw
+    return {
+        "logs": _decode_cli_output(selected).split("\n"),
+        "truncated": total > MAX_LOG_TEXT_BYTES,
+        "bytes": total,
+    }
 
 
 def _run_docker(
@@ -164,7 +231,7 @@ _DU_FIELDS = ("shared", "private", "reclaimable", "total")
 
 
 def _parse_du_summary(output: str) -> dict[str, str | None]:
-    values: dict[str, str | None] = {field: None for field in _DU_FIELDS}
+    values: dict[str, str | None] = dict.fromkeys(_DU_FIELDS)
     for line in output.splitlines():
         label, separator, value = line.partition(":")
         key = label.strip().lower()
@@ -229,8 +296,7 @@ def tool(
             result = call(*fn_args, **fn_kwargs)
             return _json_list_result(result) if isinstance(result, list) else result
 
-        name = kwargs.get("name") or fn.__name__
-        if is_tool_enabled(name, kwargs.get("annotations"), settings):
+        if is_tool_enabled(kwargs.get("annotations"), settings):
             app.tool(*args, **kwargs)(mcp_tool)
         # Direct callers keep the plain Python return value.
         return call
@@ -395,6 +461,7 @@ def docker_list_containers(
     filters: Annotated[
         ListContainersFilters | None, Field(description="Filter containers")
     ] = None,
+    format: Format = "summary",
 ) -> list[dict[str, Any]]:
     client = _client(ctx)
     label_filters = _container_label_filters(filters)
@@ -405,7 +472,7 @@ def docker_list_containers(
         params = {"all": 1 if all else 0, "filters": json.dumps(label_filters)}
         hits = api._result(api.get(api._url("/containers/json"), params=params), True)
         containers = [client.containers.get(hit["Id"]) for hit in hits]
-    return [docker_to_dict(container) for container in containers]
+    return [docker_to_dict(container, format=format) for container in containers]
 
 
 @tool(
@@ -434,7 +501,7 @@ def docker_create_container(
         dict[str, str] | None, Field(description="Environment variables dictionary")
     ] = None,
     ports: Annotated[
-        dict[str, int | list[int] | tuple[str, int] | None] | None,
+        dict[str, int | list[int | str] | None] | None,
         Field(description="Container-to-host port bindings"),
     ] = None,
     volumes: Annotated[
@@ -457,7 +524,7 @@ def docker_create_container(
             command=command,
             network=network,
             environment=environment,
-            ports=ports,
+            ports=_normalize_ports(ports),
             volumes=volumes,
             labels=labels,
             auto_remove=auto_remove,
@@ -491,7 +558,7 @@ def docker_run_container(
         dict[str, str] | None, Field(description="Environment variables dictionary")
     ] = None,
     ports: Annotated[
-        dict[str, int | list[int] | tuple[str, int] | None] | None,
+        dict[str, int | list[int | str] | None] | None,
         Field(description="Container-to-host port bindings"),
     ] = None,
     volumes: Annotated[
@@ -505,32 +572,223 @@ def docker_run_container(
         bool, Field(description="Automatically remove the container")
     ] = False,
 ) -> dict[str, Any]:
-    return docker_to_dict(
-        _client(ctx).containers.run(
-            image=image,
-            detach=detach,
-            name=name,
-            entrypoint=entrypoint,
-            command=command,
-            network=network,
-            environment=environment,
-            ports=ports,
-            volumes=volumes,
-            labels=labels,
-            auto_remove=auto_remove,
+    result = _client(ctx).containers.run(
+        image=image,
+        detach=detach,
+        name=name,
+        entrypoint=entrypoint,
+        command=command,
+        network=network,
+        environment=environment,
+        ports=_normalize_ports(ports),
+        volumes=volumes,
+        labels=labels,
+        auto_remove=auto_remove,
+    )
+    return _run_result(result, detach=detach)
+
+
+_CREATE_CONFIG_KEYS = {
+    "Hostname",
+    "Domainname",
+    "User",
+    "AttachStdin",
+    "AttachStdout",
+    "AttachStderr",
+    "ExposedPorts",
+    "Tty",
+    "OpenStdin",
+    "StdinOnce",
+    "Env",
+    "Cmd",
+    "Healthcheck",
+    "ArgsEscaped",
+    "Image",
+    "Volumes",
+    "WorkingDir",
+    "Entrypoint",
+    "NetworkDisabled",
+    "MacAddress",
+    "OnBuild",
+    "Labels",
+    "StopSignal",
+    "StopTimeout",
+    "Shell",
+}
+_ENDPOINT_CONFIG_KEYS = {
+    "IPAMConfig",
+    "Links",
+    "Aliases",
+    "MacAddress",
+    "DriverOpts",
+    "GwPriority",
+}
+
+
+def _preserve_volume_mounts(payload: dict[str, Any], attrs: Mapping[str, Any]) -> None:
+    """Ensure named and anonymous volumes keep their existing volume identity."""
+    host_config = payload["HostConfig"]
+    binds = list(host_config.get("Binds") or [])
+    bound_destinations = {
+        parts[1] for bind in binds if len(parts := bind.split(":")) >= 2
+    }
+    mounted_destinations = {
+        mount.get("Target")
+        for mount in host_config.get("Mounts") or []
+        if mount.get("Target")
+    }
+    for mount in attrs.get("Mounts") or []:
+        if mount.get("Type") != "volume":
+            continue
+        name = mount.get("Name")
+        destination = mount.get("Destination")
+        if not name or not destination:
+            continue
+        if destination in bound_destinations or destination in mounted_destinations:
+            continue
+        mode = "rw" if mount.get("RW", True) else "ro"
+        binds.append(f"{name}:{destination}:{mode}")
+        bound_destinations.add(destination)
+    if binds:
+        host_config["Binds"] = binds
+
+
+def _build_recreate_payload(container: Container, image: str) -> dict[str, Any]:
+    """Build a Docker create payload from inspected container configuration."""
+    attrs = container.attrs
+    inspected_config = attrs.get("Config")
+    inspected_host_config = attrs.get("HostConfig")
+    if not isinstance(inspected_config, Mapping):
+        raise TypeError("Container inspect data has no usable Config object")
+    if not isinstance(inspected_host_config, Mapping):
+        raise TypeError("Container inspect data has no usable HostConfig object")
+    payload = {
+        key: deepcopy(inspected_config[key])
+        for key in _CREATE_CONFIG_KEYS
+        if key in inspected_config
+    }
+    payload["Image"] = image
+    payload["HostConfig"] = deepcopy(dict(inspected_host_config))
+    hostname = payload.get("Hostname")
+    if isinstance(hostname, str) and hostname and container.id.startswith(hostname):
+        payload["Hostname"] = ""
+    _preserve_volume_mounts(payload, attrs)
+    network_mode = str(payload["HostConfig"].get("NetworkMode") or "")
+    if network_mode not in {"host", "none"} and not network_mode.startswith(
+        "container:"
+    ):
+        endpoints: dict[str, dict[str, Any]] = {}
+        networks = (attrs.get("NetworkSettings") or {}).get("Networks") or {}
+        for network_name, inspected_endpoint in networks.items():
+            endpoint = {
+                key: deepcopy(inspected_endpoint[key])
+                for key in _ENDPOINT_CONFIG_KEYS
+                if inspected_endpoint.get(key) not in (None, "", [], {})
+            }
+            endpoints[network_name] = endpoint
+        if endpoints:
+            payload["NetworkingConfig"] = {"EndpointsConfig": endpoints}
+    return payload
+
+
+def _reject_preserve_overrides(**overrides: Any) -> None:
+    provided = sorted(
+        name
+        for name, value in overrides.items()
+        if value is not None and value is not False
+    )
+    if provided:
+        raise ValueError(
+            "preserve_configuration uses the inspected container configuration; "
+            f"omit these overrides: {', '.join(provided)}"
         )
+
+
+def _recreate_existing_container(
+    docker_client: docker.DockerClient,
+    container_id: str,
+    image: str | None = None,
+) -> dict[str, Any]:
+    """Recreate a container while preserving inspected runtime configuration."""
+    container = docker_client.containers.get(container_id)
+    container.reload()
+    attrs = container.attrs
+    original_id = container.id
+    original_name = container.name
+    original_image = attrs.get("Image")
+    if not isinstance(original_image, str) or not original_image:
+        raise ValueError("Container inspect data has no immutable image ID")
+    state = attrs.get("State") or {}
+    was_running = bool(state.get("Running"))
+    target_image = image or original_image
+    # Preflight: fail before stopping/removing anything if the image is missing.
+    docker_client.images.get(target_image)
+    original_payload = _build_recreate_payload(container, original_image)
+    replacement_payload = _build_recreate_payload(container, target_image)
+    replacement: Container | None = None
+    if was_running:
+        container.stop()
+    try:
+        container.remove()
+    except docker.errors.NotFound:
+        auto_remove = bool((attrs.get("HostConfig") or {}).get("AutoRemove"))
+        if not (was_running and auto_remove):
+            raise
+    try:
+        created = docker_client.api.create_container_from_config(
+            replacement_payload, name=original_name
+        )
+        replacement = docker_client.containers.get(created["Id"])
+        if was_running:
+            replacement.start()
+        replacement.reload()
+    except Exception as recreate_error:
+        if replacement is not None:
+            try:
+                replacement.remove(force=True)
+            except docker.errors.DockerException:
+                replacement = None
+        try:
+            restored = docker_client.api.create_container_from_config(
+                original_payload, name=original_name
+            )
+            restored_container = docker_client.containers.get(restored["Id"])
+            if was_running:
+                restored_container.start()
+        except Exception as rollback_error:
+            raise RuntimeError(
+                "Container recreation failed and automatic restoration also failed: "
+                f"recreate={recreate_error!r}; restore={rollback_error!r}"
+            ) from rollback_error
+        raise RuntimeError(
+            "Container recreation failed; the original inspected configuration "
+            "was restored successfully"
+        ) from recreate_error
+    labels = (attrs.get("Config") or {}).get("Labels") or {}
+    return docker_to_dict(
+        replacement,
+        overrides={
+            "status": "recreated",
+            "recreated_from": original_id,
+            "configuration_preserved": True,
+            "compose_managed": bool(labels.get("com.docker.compose.project")),
+        },
     )
 
 
 @tool(
-    description="Stop and remove a container, then run a new container. Fails if the container does not exist.",
+    description=(
+        "Stop and remove a container, then run a new container. With "
+        "preserve_configuration, rebuild from the inspected configuration and "
+        "restore the original if replacement creation fails."
+    ),
     annotations=ToolAnnotations(
         destructive_hint=True, idempotent_hint=False, open_world_hint=False
     ),
 )
 def docker_recreate_container(
     ctx: Context[AppContext],
-    image: ImageName,
+    image: ImageName | None = None,
     container_id: ContainerID | None = None,
     name: Annotated[str | None, Field(description="Container name")] = None,
     detach: Detach = True,
@@ -542,16 +800,47 @@ def docker_recreate_container(
     volumes: VolumeMappings = None,
     labels: ContainerLabels = None,
     auto_remove: AutoRemove = False,
+    preserve_configuration: Annotated[
+        bool,
+        Field(
+            description=(
+                "Rebuild from the inspected container configuration (environment, "
+                "mounts/volume identity, networks, ports, labels, healthcheck, "
+                "restart policy) and restore the original if replacement creation "
+                "fails. Use only container_id/name and optionally image in this mode."
+            )
+        ),
+    ] = False,
 ) -> dict[str, Any]:
-    if container_id is None and name is None:
+    target = container_id or name
+    if target is None:
         raise ValueError(
             "container_id or name is required for identifying the container to stop+remove"
         )
-    old = _client(ctx).containers.get(container_id or name)
+    client = _client(ctx)
+    if preserve_configuration:
+        if container_id is not None and name is not None:
+            raise ValueError(
+                "preserve_configuration accepts either container_id or name, not both"
+            )
+        _reject_preserve_overrides(
+            entrypoint=entrypoint,
+            command=command,
+            network=network,
+            environment=environment,
+            ports=ports,
+            volumes=volumes,
+            labels=labels,
+            auto_remove=auto_remove,
+        )
+        return _recreate_existing_container(client, target, image)
+    if image is None:
+        raise ValueError("image is required unless preserve_configuration is enabled")
+    old = client.containers.get(target)
     old.stop()
     old.remove()
     return docker_to_dict(
-        _client(ctx).containers.run(
+        client.containers.run(
             image=image,
             detach=detach,
             name=name,
@@ -559,7 +848,7 @@ def docker_recreate_container(
             command=command,
             network=network,
             environment=environment,
-            ports=ports,
+            ports=_normalize_ports(ports),
             volumes=volumes,
             labels=labels,
             auto_remove=auto_remove,
@@ -594,12 +883,9 @@ def docker_fetch_container_logs(
         int | Literal["all"],
         Field(description="Number of lines to show from the end"),
     ] = 100,
-) -> dict[str, list[str]]:
-    return {
-        "logs": _decode_cli_output(
-            _client(ctx).containers.get(container_id).logs(tail=tail)
-        ).split("\n")
-    }
+) -> dict[str, Any]:
+    raw = _client(ctx).containers.get(container_id).logs(tail=tail)
+    return _bounded_log_output(raw)
 
 
 @tool(
@@ -749,9 +1035,10 @@ def docker_list_images(
     filters: Annotated[
         ListImagesFilters | None, Field(description="Filter images")
     ] = None,
+    format: Format = "summary",
 ) -> list[dict[str, Any]]:
     return [
-        docker_to_dict(image)
+        docker_to_dict(image, format=format)
         for image in _client(ctx).images.list(
             name=name, all=all, filters=_engine_filters(filters)
         )
@@ -799,7 +1086,9 @@ def docker_build_image(
     tag: Annotated[str, Field(description="Image tag")],
     dockerfile: Annotated[str | None, Field(description="Path to Dockerfile")] = None,
 ) -> dict[str, Any]:
-    image, logs = _client(ctx).images.build(path=path, tag=tag, dockerfile=dockerfile)
+    image, logs = _client(ctx).images.build(
+        path=path, tag=tag, dockerfile=dockerfile, rm=True, forcerm=True
+    )
     return {"image": docker_to_dict(image), "logs": list(logs)}
 
 
@@ -1119,8 +1408,12 @@ def docker_network_inspect(
         read_only_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def docker_list_volumes(ctx: Context[AppContext]) -> list[dict[str, Any]]:
-    return [docker_to_dict(volume) for volume in _client(ctx).volumes.list()]
+def docker_list_volumes(
+    ctx: Context[AppContext], format: Format = "summary"
+) -> list[dict[str, Any]]:
+    return [
+        docker_to_dict(volume, format=format) for volume in _client(ctx).volumes.list()
+    ]
 
 
 @tool(
