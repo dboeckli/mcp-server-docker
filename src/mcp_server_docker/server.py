@@ -299,7 +299,7 @@ def tool(
             result = call(*fn_args, **fn_kwargs)
             return _json_list_result(result) if isinstance(result, list) else result
 
-        if is_tool_enabled(kwargs.get("annotations"), settings):
+        if is_tool_enabled(kwargs.get("annotations"), settings, fn.__name__):
             app.tool(*args, **kwargs)(mcp_tool)
         # Direct callers keep the plain Python return value.
         return call
