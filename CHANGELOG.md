@@ -3,7 +3,7 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
-## [Unreleased]
+## [0.10.0] - 2026-11-27
 
 ### Added
 
@@ -13,6 +13,31 @@ Notable changes in this fork. Older releases are documented on
   replacement image before stopping anything, restores the original
   configuration if replacement creation fails, and keeps the previous running
   state. The default stop/remove/run behaviour is unchanged.
+
+### Documentation and metadata
+
+- Added `NOTICE`, a README License section, the "Why this fork exists" rationale
+  and an explicit independent-maintainer/affiliation disclaimer.
+- `pyproject.toml` records the fork maintainer and the GPLv3 classifier;
+  `glama.json` names the fork maintainer; the image ships `NOTICE`.
+- Added `AGENTS.md` and `docs/upstream-tracking.md` for repository guidance and
+  upstream/reference-fork tracking.
+
+### Tooling
+
+- CI runs SonarCloud analysis with coverage and JUnit reports in
+  `target/reports/`, uploads the `test-reports` artifact and keeps the 90 %
+  coverage gate.
+- All GitHub Actions are pinned by full commit SHA; CI uses `uv sync` and
+  `uv run` with `--locked --no-build`.
+- Addressed the safe SonarCloud findings (uv flags, `dict.fromkeys`, a shared
+  label-filter description, an unused parameter and split test assertions)
+  without behaviour changes.
+
+### Packaging
+
+- PyPI package `mcp-server-docker-dboeckli==0.10.0`
+- Container image `ghcr.io/dboeckli/mcp-server-docker:0.10.0`
 
 ## [0.9.0] - 2026-11-27
 
