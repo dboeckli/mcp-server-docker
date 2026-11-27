@@ -1,3 +1,3 @@
 """Package version kept available without distribution metadata at import time."""
 
-__version__ = "0.8.2"
+__version__ = "0.9.0"
