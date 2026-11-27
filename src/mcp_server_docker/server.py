@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import wraps
 from typing import Annotated, Any, Literal, NoReturn
 
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from mcp_server_docker._version import __version__
 from mcp_server_docker.output_schemas import docker_to_dict
-from mcp_server_docker.redaction import redact_env
+from mcp_server_docker.redaction import redact_env, redact_error
 from mcp_server_docker.settings import ServerSettings, is_tool_enabled
 
 
@@ -34,6 +35,8 @@ class AppContext:
 
 
 _LABEL_FILTER_DESCRIPTION = "Filter by label, either `key` or `key=value` format"
+_SERVER_NAME = "docker-server"
+_STATUS_TIMEOUT_SECONDS = 2.0
 
 
 class ListContainersFilters(BaseModel):
@@ -253,7 +256,7 @@ async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
         client.close()
 
 
-app = MCPServer("docker-server", version=__version__, lifespan=lifespan)
+app = MCPServer(_SERVER_NAME, version=__version__, lifespan=lifespan)
 settings = ServerSettings.from_env_and_argv()
 
 
@@ -1550,3 +1553,51 @@ def docker_version(ctx: Context[AppContext]) -> dict[str, Any]:
 def docker_system_info(ctx: Context[AppContext]) -> dict[str, Any]:
     info = _client(ctx).info()
     return {key: info[key] for key in _SYSTEM_INFO_KEYS if key in info}
+
+
+def _degraded_docker_status(error: str) -> dict[str, Any]:
+    return {"reachable": False, "error": redact_error(error)}
+
+
+def _probe_docker_daemon(client: docker.DockerClient) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        response = client.api.get(
+            f"{client.api.base_url}/version", timeout=_STATUS_TIMEOUT_SECONDS
+        )
+        if response.status_code != 200:
+            return _degraded_docker_status(
+                f"docker daemon returned HTTP {response.status_code}"
+            )
+        version = response.json()
+    except (docker.errors.DockerException, OSError, ValueError) as exc:
+        return _degraded_docker_status(str(exc))
+    if not isinstance(version, dict):
+        return _degraded_docker_status(
+            "docker daemon returned an unexpected version payload"
+        )
+    return {
+        "reachable": True,
+        "version": version.get("Version"),
+        "api_version": version.get("ApiVersion"),
+        "latency_ms": int((time.perf_counter() - started) * 1000),
+    }
+
+
+@tool(
+    description=(
+        "Check Docker daemon reachability and report the MCP server, engine and "
+        "API versions"
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def docker_status(ctx: Context[AppContext]) -> dict[str, Any]:
+    docker_state = _probe_docker_daemon(_client(ctx))
+    return {
+        "status": "ok" if docker_state["reachable"] else "degraded",
+        "server": {"name": _SERVER_NAME, "version": __version__},
+        "docker": docker_state,
+        "checked_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }

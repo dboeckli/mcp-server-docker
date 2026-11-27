@@ -3,6 +3,18 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Added
+
+- `docker_status` health tool: checks the Docker daemon with a 2-second
+  per-request timeout and always returns a structured result (`status: ok` or
+  `degraded`) instead of raising. The payload carries the MCP server version,
+  the Docker engine/API versions, latency and a UTC timestamp. Socket and
+  certificate paths, URL credentials and `DOCKER_*` environment values are
+  redacted from daemon errors. Read-only and idempotent, so it stays available
+  under `--read-only` and is usable behind a gateway.
+
 ## [0.12.1] - 2026-11-27
 
 ### Changed

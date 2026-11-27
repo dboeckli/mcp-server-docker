@@ -49,7 +49,7 @@ The differences that matter in practice:
 - **Bounded, LLM-friendly output:** compact `summary` listings plus capped log
   and attached-run output with `truncated`/`bytes` metadata.
 - **More read-only tools:** container health, processes, stats, events, disk
-  usage, version and system info.
+  usage, version, system info and a redacted daemon health probe.
 - **Safety modes** (`--read-only`, `--disable-destructive`) for gateway
   allow-listing.
 - **Docker Desktop correctness:** label filters in the CLI map form and unset
@@ -378,6 +378,17 @@ rejects it with an explanatory error instead of calling the CLI.
 - `docker_system_df`
 - `docker_version`
 - `docker_system_info`
+- `docker_status`
+
+`docker_status` is the health probe for gateways and orchestrators: it checks
+the daemon with a 2-second timeout and always answers instead of raising.
+`status` is `ok` when the daemon responded and `degraded` when the server is
+alive but the daemon is not. The payload includes the MCP server name/version
+(useful when a gateway masks the `initialize` `serverInfo`), the Docker engine
+and API versions, the measured latency and a UTC timestamp. Daemon errors are
+redacted: socket and certificate paths, URL credentials and `DOCKER_*`
+environment values are removed. The tool takes no arguments and is available in
+read-only mode.
 
 `docker_system_df` uses the `docker` CLI and reports the same summary as
 `docker system df`, including reclaimable space. Pass `verbose=true` for the
@@ -456,9 +467,9 @@ Three modes decide which tools are registered. A filtered tool is absent from
 
 | Mode | Flag / env | Tools |
 | --- | --- | --- |
-| Default | – | 36 |
-| No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 31 |
-| Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 22 |
+| Default | – | 37 |
+| No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 32 |
+| Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 23 |
 
 - **No destructive** removes the five tools annotated with
   `destructiveHint=true` (`docker_remove_container`, `docker_remove_image`,
@@ -468,7 +479,8 @@ Three modes decide which tools are registered. A filtered tool is absent from
   `MCP_SERVER_DOCKER_NO_DESTRUCTIVE` are accepted as synonyms.
 - **Read-only** exposes only tools annotated with `readOnlyHint=true`: all
   `docker_list_*`, log, stats, inspect, `docker_container_health`,
-  `docker_events_list`, disk usage and the Buildx inspection tools.
+  `docker_events_list`, `docker_status`, disk usage and the Buildx inspection
+  tools.
 - Read-only is the stricter mode and wins when both are set.
 - The container log/stats resources and the `docker_compose` prompt stay
   available in every mode.
