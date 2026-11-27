@@ -944,7 +944,11 @@ async def test_container_logs_replace_undecodable_bytes(
             "docker_fetch_container_logs", {"container_id": "x"}
         )
         logs = (await client.read_resource("docker://containers/x/logs")).contents[0]
-    assert result.structured_content == {"logs": ["line\ufffd", ""]}
+    assert result.structured_content == {
+        "logs": ["line\ufffd", ""],
+        "truncated": False,
+        "bytes": len(b"line\x90\n"),
+    }
     assert logs.text == "line\ufffd\n"
 
 

@@ -167,6 +167,20 @@ def _run_result(value: Any, *, detach: bool) -> dict[str, Any]:
     raise TypeError(f"Attached Docker run returned unexpected type: {type(value)}")
 
 
+MAX_LOG_TEXT_BYTES = 20 * 1024
+
+
+def _bounded_log_output(raw: bytes) -> dict[str, Any]:
+    """Return a bounded text suffix with original size and truncation evidence."""
+    total = len(raw)
+    selected = raw[-MAX_LOG_TEXT_BYTES:] if total > MAX_LOG_TEXT_BYTES else raw
+    return {
+        "logs": _decode_cli_output(selected).split("\n"),
+        "truncated": total > MAX_LOG_TEXT_BYTES,
+        "bytes": total,
+    }
+
+
 def _run_docker(
     *args: str, combine_stderr: bool = False, timeout: float | None = None
 ) -> str:
@@ -639,12 +653,9 @@ def docker_fetch_container_logs(
         int | Literal["all"],
         Field(description="Number of lines to show from the end"),
     ] = 100,
-) -> dict[str, list[str]]:
-    return {
-        "logs": _decode_cli_output(
-            _client(ctx).containers.get(container_id).logs(tail=tail)
-        ).split("\n")
-    }
+) -> dict[str, Any]:
+    raw = _client(ctx).containers.get(container_id).logs(tail=tail)
+    return _bounded_log_output(raw)
 
 
 @tool(
