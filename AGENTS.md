@@ -2,9 +2,12 @@
 
 ## What this repo is
 
-- Fork of `ckreiling/mcp-server-docker`. Fixes are maintained here only and are
-  **not** contributed upstream. Monitored repos/branches and the issue map are in
-  `docs/upstream-tracking.md` (base `ckreiling`, reference fork `X1pheR`).
+- Fork of
+  [`ckreiling/mcp-server-docker`](https://github.com/ckreiling/mcp-server-docker).
+  Fixes are maintained here only and are **not** contributed upstream. Monitored
+  repos/branches and the issue map are in `docs/upstream-tracking.md` (base
+  `ckreiling`, reference fork
+  [`X1pheR/mcp-server-docker`](https://github.com/X1pheR/mcp-server-docker)).
 - Single stdio MCP server for Docker. Entry point is `mcp_server_docker:main`,
   which calls `server.app.run()`. Python 3.12, `uv`, docker SDK `>=7.1`, `mcp` 2.x.
 - Every MCP tool is named `docker_*`; resource URIs and the `docker_compose`
@@ -84,9 +87,10 @@ uv build
 - Dockerfile: the dependency-only sync uses `--no-build`; the project-install
   sync must **not** use `--no-build` (uv cannot install the workspace package
   without building it).
-- SonarCloud project `dboeckli_mcp-server-docker` (org `dboeckli`), config in
-  `sonar-project.properties`, repo secret `SONAR_TOKEN`. Automatic Analysis must
-  stay **off**.
+- SonarCloud project
+  [`dboeckli_mcp-server-docker`](https://sonarcloud.io/project/overview?id=dboeckli_mcp-server-docker)
+  (org `dboeckli`), config in `sonar-project.properties`, repo secret
+  `SONAR_TOKEN`. Automatic Analysis must stay **off**.
 - CI writes `target/reports/coverage.xml` and `target/reports/junit.xml`, uploads
   the `test-reports` artifact, and skips the Sonar scan when `SONAR_TOKEN` is
   missing, on fork PRs and on tag pushes. The quality gate is **not** enforced by
