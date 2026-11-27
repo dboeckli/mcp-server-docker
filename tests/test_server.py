@@ -67,6 +67,8 @@ class Collection:
 
     def run(self, **kwargs):
         self.calls.append((f"{self.name}.run", kwargs))
+        if kwargs.get("detach") is False:
+            return b"attached\xff\n"
         return Object(self.calls)
 
 
@@ -749,9 +751,22 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert docker_client.call("containers.create")["image"] == "alpine"
         assert docker_client.call("containers.create")["environment"] == {"X": "1"}
         await client.call_tool(
+            "docker_create_container",
+            {"image": "alpine", "ports": {"80/tcp": ["127.0.0.1", 8080]}},
+        )
+        assert docker_client.call("containers.create")["ports"] == {
+            "80/tcp": ("127.0.0.1", 8080)
+        }
+        attached = await client.call_tool(
             "docker_run_container", {"image": "alpine", "detach": False}
         )
         assert docker_client.call("containers.run")["detach"] is False
+        assert attached.structured_content == {
+            "mode": "attached",
+            "output": "attached\ufffd\n",
+            "truncated": False,
+            "bytes": 10,
+        }
         await client.call_tool(
             "docker_recreate_container", {"image": "alpine", "name": "old"}
         )
@@ -861,6 +876,8 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
             "path": ".",
             "tag": "test",
             "dockerfile": "Dockerfile.test",
+            "rm": True,
+            "forcerm": True,
         }
         await client.call_tool("docker_remove_image", {"image": "test", "force": True})
         assert docker_client.call("images.remove") == {"image": "test", "force": True}
@@ -1375,3 +1392,71 @@ async def test_events_list_includes_events_from_the_current_second(
     command = docker_cli.calls[-1]
     assert command[5] == "991"
     assert command[7] == "1001"
+
+
+def _array_nodes_without_items(node: Any) -> list[Any]:
+    found = []
+    if isinstance(node, dict):
+        if node.get("type") == "array" and "items" not in node:
+            found.append(node)
+        for value in node.values():
+            found.extend(_array_nodes_without_items(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_array_nodes_without_items(value))
+    return found
+
+
+@pytest.mark.anyio
+async def test_tool_input_schemas_have_items_for_every_array(server):
+    async with Client(server, raise_exceptions=True) as client:
+        tools = await client.list_tools()
+    offenders = {
+        tool.name: _array_nodes_without_items(tool.input_schema) for tool in tools.tools
+    }
+    assert {name: nodes for name, nodes in offenders.items() if nodes} == {}
+
+
+@pytest.mark.parametrize("factory", [bytes, bytearray, memoryview])
+@pytest.mark.parametrize("size", [0, 20480, 20481, 40000])
+def test_attached_output_preserves_bounded_suffix_and_original_size(factory, size):
+    raw = b"x" * size
+    result = server_module._run_result(factory(raw), detach=False)
+    assert result == {
+        "mode": "attached",
+        "output": raw[-server_module.MAX_ATTACHED_TEXT_BYTES :].decode(
+            "utf-8", errors="replace"
+        ),
+        "truncated": size > server_module.MAX_ATTACHED_TEXT_BYTES,
+        "bytes": size,
+    }
+
+
+def test_attached_output_replaces_a_partial_utf8_sequence_at_the_bound():
+    raw = b"prefix" + "€".encode() + b"x" * 20479
+    result = server_module._run_result(raw, detach=False)
+    assert result["output"] == "\ufffd" + "x" * 20479
+    assert result["truncated"] is True
+    assert result["bytes"] == len(raw)
+
+
+def test_attached_output_rejects_unexpected_result_types():
+    with pytest.raises(TypeError, match="unexpected type"):
+        server_module._run_result(object(), detach=False)
+
+
+def test_normalize_ports_restores_the_host_ip_tuple_form():
+    assert server_module._normalize_ports(
+        {
+            "80/tcp": ["127.0.0.1", 8080],
+            "81/tcp": 8081,
+            "82/tcp": [8082, 8083],
+            "83/tcp": None,
+        }
+    ) == {
+        "80/tcp": ("127.0.0.1", 8080),
+        "81/tcp": 8081,
+        "82/tcp": [8082, 8083],
+        "83/tcp": None,
+    }
+    assert server_module._normalize_ports(None) is None
