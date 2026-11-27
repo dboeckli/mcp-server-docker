@@ -3,6 +3,17 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Added
+
+- `docker_recreate_container` accepts `preserve_configuration=true`: it rebuilds
+  the container from its inspected configuration (environment, mounts/volume
+  identity, networks, ports, labels, healthcheck, restart policy), checks the
+  replacement image before stopping anything, restores the original
+  configuration if replacement creation fails, and keeps the previous running
+  state. The default stop/remove/run behaviour is unchanged.
+
 ## [0.9.0] - 2026-11-27
 
 ### Breaking

@@ -269,6 +269,15 @@ flood the client with unbounded text. `ports` accepts JSON arrays too, e.g.
 split on newlines into `logs`, together with `truncated` and the original byte
 count (`bytes`); invalid UTF-8 is replaced.
 
+`docker_recreate_container` keeps its original stop/remove/run behaviour by
+default. With `preserve_configuration=true` it rebuilds the container from its
+inspected configuration instead: environment, mounts/volume identity, networks,
+ports, labels, healthcheck and restart policy are preserved, the replacement
+image is checked before anything is removed, and the original configuration is
+restored if creating the replacement fails. In that mode pass only
+`container_id`/`name` and optionally `image` (omitted `image` reuses the current
+one); explicit overrides are rejected.
+
 Every list tool returns a single JSON array. `docker_list_containers`,
 `docker_list_images` and `docker_list_volumes` accept `format`: the default
 `summary` returns a compact `docker ps`-style row (no health-check logs, nested
