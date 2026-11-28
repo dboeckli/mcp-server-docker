@@ -9,7 +9,8 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections import deque
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from typing import Annotated, Any, Literal, NoReturn
 
 import docker
 from docker.models.containers import Container
+from docker.utils import parse_repository_tag
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -1146,6 +1148,30 @@ def _collect_exec_output(
     return value
 
 
+def _run_stream_with_timeout(
+    consume: Callable[[], Any],
+    timeout_seconds: int,
+    timeout_message: Callable[[], str],
+) -> Any:
+    """Run a stream consumer in a worker thread so the caller can time out."""
+    outcome: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def work() -> None:
+        try:
+            outcome.put((True, consume()))
+        except Exception as exc:  # noqa: BLE001 - relay every failure to the caller
+            outcome.put((False, exc))
+
+    threading.Thread(target=work, daemon=True).start()
+    try:
+        succeeded, value = outcome.get(timeout=timeout_seconds)
+    except queue.Empty:
+        raise ToolRuntimeError(timeout_message()) from None
+    if not succeeded:
+        raise value
+    return value
+
+
 @tool(
     description=(
         "Execute a command in a running container (argv, no shell, bounded output)"
@@ -1219,6 +1245,78 @@ def docker_list_images(
     ]
 
 
+_PULL_IMAGE_TIMEOUT_LIMITS = (1, 3600)
+_BUILD_IMAGE_TIMEOUT_LIMITS = (1, 3600)
+_BUILD_LOG_RECORDS = 200
+
+
+class _TailBuffer:
+    """Thread-safe bounded text tail with byte accounting."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._tail = bytearray()
+        self._bytes = 0
+
+    def add(self, text: str) -> None:
+        if not text:
+            return
+        raw = text.encode(_CLI_ENCODING, errors="replace")
+        with self._lock:
+            self._bytes += len(raw)
+            self._tail.extend(raw)
+            if len(self._tail) > MAX_LOG_TEXT_BYTES:
+                del self._tail[:-MAX_LOG_TEXT_BYTES]
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            raw = bytes(self._tail)
+            total = self._bytes
+        return {
+            "output": _decode_cli_output(raw),
+            "truncated": total > len(raw),
+            "bytes": total,
+        }
+
+
+def _tail_text(buffer: _TailBuffer) -> str:
+    return buffer.snapshot()["output"].strip() or "<no output>"
+
+
+def _stream_log_line(chunk: Mapping[str, Any]) -> str:
+    if "error" in chunk:
+        return str(chunk["error"])
+    if "stream" in chunk:
+        return str(chunk["stream"]).rstrip("\n")
+    parts = [str(chunk.get("status") or ""), str(chunk.get("id") or "")]
+    line = " ".join(part for part in parts if part)
+    return line or json.dumps(chunk, default=str)
+
+
+def _consume_stream(
+    stream_factory: Callable[[], Iterable[Mapping[str, Any]]],
+    buffer: _TailBuffer,
+    label: str,
+    on_chunk: Callable[[Mapping[str, Any]], None] | None = None,
+) -> None:
+    """Consume a progress stream, buffering a tail and raising on error chunks."""
+    try:
+        for chunk in stream_factory():
+            line = _stream_log_line(chunk)
+            if line:
+                buffer.add(f"{line}\n")
+            if on_chunk is not None:
+                on_chunk(chunk)
+            if "error" in chunk:
+                raise ToolRuntimeError(
+                    f"{label} failed: {chunk['error']}\n{_tail_text(buffer)}"
+                )
+    except ToolRuntimeError:
+        raise
+    except Exception as exc:
+        raise ToolRuntimeError(f"{label} failed: {exc}\n{_tail_text(buffer)}") from exc
+
+
 @tool(
     description="Pull a Docker image",
     annotations=ToolAnnotations(
@@ -1229,8 +1327,36 @@ def docker_pull_image(
     ctx: Context[AppContext],
     repository: Annotated[str, Field(description="Image repository")],
     tag: Annotated[str | None, Field(description="Image tag")] = "latest",
+    timeout_seconds: Annotated[
+        int, Field(description="Maximum pull time in seconds (1-3600)")
+    ] = 1800,
 ) -> dict[str, Any]:
-    return docker_to_dict(_client(ctx).images.pull(repository, tag=tag))
+    client = _client(ctx)
+    repo, embedded_tag = parse_repository_tag(repository)
+    effective_tag = tag or embedded_tag or "latest"
+    separator = "@" if effective_tag.startswith("sha256:") else ":"
+    image_name = f"{repo}{separator}{effective_tag}"
+    buffer = _TailBuffer()
+    timeout = _clamp(timeout_seconds, _PULL_IMAGE_TIMEOUT_LIMITS)
+
+    def consume() -> dict[str, Any]:
+        _consume_stream(
+            lambda: client.api.pull(repo, tag=effective_tag, stream=True, decode=True),
+            buffer,
+            "docker pull",
+        )
+        return buffer.snapshot()
+
+    def timeout_message() -> str:
+        return (
+            f"docker pull timed out after {timeout}s; "
+            "it may still be running in the daemon\n"
+            f"{_tail_text(buffer)}"
+        )
+
+    progress = _run_stream_with_timeout(consume, timeout, timeout_message)
+    image = client.images.get(image_name)
+    return {**docker_to_dict(image), "progress": progress}
 
 
 @tool(
@@ -1259,11 +1385,68 @@ def docker_build_image(
     path: Annotated[str, Field(description="Path to build context")],
     tag: Annotated[str, Field(description="Image tag")],
     dockerfile: Annotated[str | None, Field(description="Path to Dockerfile")] = None,
+    no_cache: Annotated[bool, Field(description="Do not use cache")] = False,
+    platform: Annotated[str | None, Field(description="Target platform")] = None,
+    build_args: Annotated[
+        dict[str, str] | None, Field(description="Build arguments")
+    ] = None,
+    timeout_seconds: Annotated[
+        int, Field(description="Maximum build time in seconds (1-3600)")
+    ] = 600,
 ) -> dict[str, Any]:
-    image, logs = _client(ctx).images.build(
-        path=path, tag=tag, dockerfile=dockerfile, rm=True, forcerm=True
+    client = _client(ctx)
+    buffer = _TailBuffer()
+    logs: deque[dict[str, Any]] = deque(maxlen=_BUILD_LOG_RECORDS)
+    timeout = _clamp(timeout_seconds, _BUILD_IMAGE_TIMEOUT_LIMITS)
+
+    def consume() -> tuple[list[dict[str, Any]], bool, int]:
+        chunks = 0
+
+        def record(chunk: Mapping[str, Any]) -> None:
+            nonlocal chunks
+            chunks += 1
+            logs.append(chunk)
+
+        _consume_stream(
+            lambda: client.api.build(
+                path=path,
+                tag=tag,
+                dockerfile=dockerfile,
+                rm=True,
+                forcerm=True,
+                nocache=no_cache,
+                platform=platform,
+                buildargs=build_args,
+                decode=True,
+            ),
+            buffer,
+            "docker build",
+            record,
+        )
+        snapshot = buffer.snapshot()
+        return (
+            list(logs),
+            chunks > _BUILD_LOG_RECORDS or snapshot["truncated"],
+            snapshot["bytes"],
+        )
+
+    def timeout_message() -> str:
+        return (
+            f"docker build timed out after {timeout}s; "
+            "it may still be running in the daemon\n"
+            f"{_tail_text(buffer)}"
+        )
+
+    build_logs, truncated, log_bytes = _run_stream_with_timeout(
+        consume, timeout, timeout_message
     )
-    return {"image": docker_to_dict(image), "logs": list(logs)}
+    image = client.images.get(tag)
+    return {
+        "image": docker_to_dict(image),
+        "logs": build_logs,
+        "logs_truncated": truncated,
+        "logs_bytes": log_bytes,
+    }
 
 
 @tool(

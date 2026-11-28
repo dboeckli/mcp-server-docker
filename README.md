@@ -365,6 +365,17 @@ from unfiltered listings but reveals them for a `label` filter, so
 `docker_image_history` is not redacted: layer `CreatedBy` commands can contain
 secrets baked into the image.
 
+`docker_build_image` streams the build log through a bounded tail (last 20 KiB).
+`logs` keeps the last 200 chunks and the response adds `logs_truncated` and
+`logs_bytes`. It accepts `no_cache`, `platform`, `build_args` and
+`timeout_seconds` (default 600, clamped to 1-3600). A failure or timeout raises
+an error with the log tail; the build may keep running in the daemon.
+
+`docker_pull_image` streams pull progress into an additive `progress` object
+(`output`, `truncated`, `bytes`) and enforces `timeout_seconds` (default 1800,
+clamped to 1-3600). Error chunks are surfaced as tool errors with the progress
+tail; the pull may keep running in the daemon.
+
 ### Buildx
 
 - `docker_buildx_build`
