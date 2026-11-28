@@ -7,19 +7,19 @@
     "url": "https://github.com/dboeckli/mcp-server-docker",
     "source": "github"
   },
-  "version": "0.13.0",
+  "version": "0.14.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-server-docker-dboeckli",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "transport": {
         "type": "stdio"
       }
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/dboeckli/mcp-server-docker:0.13.0",
+      "identifier": "ghcr.io/dboeckli/mcp-server-docker:0.14.0",
       "transport": {
         "type": "stdio"
       }
