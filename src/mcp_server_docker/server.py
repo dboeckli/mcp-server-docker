@@ -1296,8 +1296,8 @@ def docker_buildx_logs(
     return _run_docker(*args, combine_stderr=True)
 
 
-_BUILDX_PRUNE_TOTAL = re.compile(r"^\s*Total:\s*(?P<size>\S.*?)\s*$", re.MULTILINE)
-_BUILDX_PRUNE_ROW = re.compile(r"^(?P<id>\S+)\s+(?:true|false)\s", re.MULTILINE)
+_BUILDX_PRUNE_TOTAL = re.compile(r"^Total:[ \t]*(?P<size>\S+)[ \t]*$", re.MULTILINE)
+_BUILDX_PRUNE_ROW = re.compile(r"^(?P<id>\S+)[ \t]+(?:true|false)[ \t]", re.MULTILINE)
 
 
 def _parse_buildx_prune(output: str) -> dict[str, Any]:
