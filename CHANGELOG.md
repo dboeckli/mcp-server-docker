@@ -7,6 +7,12 @@ Notable changes in this fork. Older releases are documented on
 
 ### Added
 
+- `docker_container_exec` runs an argv command in a running container without a
+  shell or TTY. It returns `exit_code`, `output`, `truncated` and `bytes`,
+  caps the output at the last 20 KiB, and enforces a 1-300 s timeout
+  (`timeout_seconds`, default 30); a timeout is an error and the process may
+  keep running. Non-zero exit codes are returned as data. Write tool, so it is
+  absent under `--read-only` and stays available under `--disable-destructive`.
 - Prune tools to reclaim disk space without leaving the agent session:
   `docker_system_prune` (stopped containers, unused networks, unused images
   and build cache, with opt-in anonymous volumes), `docker_container_prune`,

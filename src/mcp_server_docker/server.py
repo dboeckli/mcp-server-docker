@@ -1,9 +1,11 @@
 """MCPServer v2 implementation for Docker."""
 
 import json
+import queue
 import re
 import shutil
 import subprocess
+import threading
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
@@ -1066,6 +1068,88 @@ def docker_container_stats(
     container_id: ContainerID,
 ) -> dict[str, Any]:
     return _one_shot_stats(_client(ctx), container_id)
+
+
+MAX_EXEC_TEXT_BYTES = 20 * 1024
+_EXEC_TIMEOUT_LIMITS = (1, 300)
+
+
+def _collect_exec_output(
+    api: Any, exec_id: str, timeout_seconds: int
+) -> tuple[int, bytes]:
+    """Stream exec output in a worker thread so this call can enforce a timeout."""
+    outcome: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def collect() -> None:
+        try:
+            total = 0
+            tail = bytearray()
+            for chunk in api.exec_start(exec_id, stream=True):
+                total += len(chunk)
+                tail.extend(chunk)
+                if len(tail) > MAX_EXEC_TEXT_BYTES:
+                    del tail[:-MAX_EXEC_TEXT_BYTES]
+            outcome.put((True, (total, bytes(tail))))
+        except Exception as exc:  # noqa: BLE001 - relay every failure to the caller
+            outcome.put((False, exc))
+
+    threading.Thread(target=collect, daemon=True).start()
+    try:
+        succeeded, value = outcome.get(timeout=timeout_seconds)
+    except queue.Empty:
+        raise ToolRuntimeError(
+            f"docker exec timed out after {timeout_seconds}s; "
+            "the command may still be running in the container"
+        ) from None
+    if not succeeded:
+        raise value
+    return value
+
+
+@tool(
+    description=(
+        "Execute a command in a running container (argv, no shell, bounded output)"
+    ),
+    annotations=ToolAnnotations(
+        destructive_hint=False, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_container_exec(
+    ctx: Context[AppContext],
+    container_id: ContainerID,
+    command: Annotated[
+        list[str], Field(min_length=1, description="Command and arguments to run")
+    ],
+    workdir: Annotated[
+        str | None, Field(description="Working directory inside the container")
+    ] = None,
+    env: Annotated[
+        dict[str, str] | None, Field(description="Extra environment variables")
+    ] = None,
+    timeout_seconds: Annotated[
+        int, Field(description="Maximum run time in seconds (1-300)")
+    ] = 30,
+) -> dict[str, Any]:
+    client = _client(ctx)
+    container = client.containers.get(container_id)
+    exec_id = client.api.exec_create(
+        container.id,
+        command,
+        workdir=workdir,
+        environment=env,
+        tty=False,
+        stdin=False,
+    )["Id"]
+    total, raw = _collect_exec_output(
+        client.api, exec_id, _clamp(timeout_seconds, _EXEC_TIMEOUT_LIMITS)
+    )
+    info = client.api.exec_inspect(exec_id)
+    return {
+        "exit_code": info.get("ExitCode"),
+        "output": _decode_cli_output(raw),
+        "truncated": total > len(raw),
+        "bytes": total,
+    }
 
 
 @tool(

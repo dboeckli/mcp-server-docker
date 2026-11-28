@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -112,6 +113,9 @@ class Api:
         self.error: Exception | None = None
         self.timeouts: list[float | None] = []
         self.prune_builds_payload: dict[str, Any] = {}
+        self.exec_output: list[bytes] = []
+        self.exec_exit_code: int | None = 0
+        self.exec_stream: Any = None
 
     def _url(self, path: str) -> str:
         return f"http://docker{path}"
@@ -119,6 +123,22 @@ class Api:
     def prune_builds(self, **params: Any) -> dict[str, Any]:
         self.calls.append(("api.prune_builds", params))
         return self.prune_builds_payload
+
+    def exec_create(
+        self, container: str, cmd: list[str], **kwargs: Any
+    ) -> dict[str, Any]:
+        self.calls.append(("api.exec_create", (container, cmd, kwargs)))
+        return {"Id": "exec-1"}
+
+    def exec_start(self, exec_id: str, **kwargs: Any) -> Any:
+        self.calls.append(("api.exec_start", (exec_id, kwargs)))
+        if self.exec_stream is not None:
+            return self.exec_stream
+        return iter(self.exec_output)
+
+    def exec_inspect(self, exec_id: str) -> dict[str, Any]:
+        self.calls.append(("api.exec_inspect", exec_id))
+        return {"ExitCode": self.exec_exit_code}
 
     def get(
         self,
@@ -869,6 +889,117 @@ async def test_container_stats_tool_returns_one_shot_snapshot(server, docker_cli
 
 
 @pytest.mark.anyio
+async def test_container_exec_runs_argv_and_returns_output(server, docker_client):
+    docker_client.api.exec_output = [b"ho", b"la\n"]
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_container_exec",
+            {
+                "container_id": "web",
+                "command": ["ls", "-l"],
+                "workdir": "/tmp",
+                "env": {"A": "B"},
+                "timeout_seconds": 5,
+            },
+        )
+    assert result.structured_content == {
+        "exit_code": 0,
+        "output": "hola\n",
+        "truncated": False,
+        "bytes": 5,
+    }
+    assert docker_client.call("api.exec_create") == (
+        "object-id",
+        ["ls", "-l"],
+        {
+            "workdir": "/tmp",
+            "environment": {"A": "B"},
+            "tty": False,
+            "stdin": False,
+        },
+    )
+    assert docker_client.call("api.exec_start") == ("exec-1", {"stream": True})
+    assert docker_client.call("api.exec_inspect") == "exec-1"
+
+
+@pytest.mark.anyio
+async def test_container_exec_returns_nonzero_exit_code(server, docker_client):
+    docker_client.api.exec_output = [b"boom\n"]
+    docker_client.api.exec_exit_code = 2
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_container_exec",
+            {"container_id": "web", "command": ["false"]},
+        )
+    assert not result.is_error
+    assert result.structured_content == {
+        "exit_code": 2,
+        "output": "boom\n",
+        "truncated": False,
+        "bytes": 5,
+    }
+
+
+@pytest.mark.anyio
+async def test_container_exec_truncates_output_to_last_20_kib(server, docker_client):
+    payload = b"x" * 1000 + b"y" * (20 * 1024 + 100)
+    docker_client.api.exec_output = [payload]
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_container_exec",
+            {"container_id": "web", "command": ["cat", "big"]},
+        )
+    assert result.structured_content["bytes"] == len(payload)
+    assert result.structured_content["truncated"] is True
+    assert len(result.structured_content["output"]) == 20 * 1024
+    assert result.structured_content["output"].startswith("y")
+
+
+@pytest.mark.anyio
+async def test_container_exec_times_out(server, docker_client):
+    release = threading.Event()
+
+    class BlockingStream:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            release.wait()
+            raise StopIteration
+
+    docker_client.api.exec_stream = BlockingStream()
+    try:
+        async with Client(server, raise_exceptions=True) as client:
+            result = await client.call_tool(
+                "docker_container_exec",
+                {
+                    "container_id": "web",
+                    "command": ["sleep", "60"],
+                    "timeout_seconds": 1,
+                },
+            )
+    finally:
+        release.set()
+    assert result.is_error
+    assert "timed out" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_container_exec_reports_exec_failures(server, docker_client):
+    def fail(exec_id, **kwargs):
+        raise docker.errors.APIError("exec failed")
+
+    docker_client.api.exec_start = fail
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_container_exec",
+            {"container_id": "web", "command": ["ls"]},
+        )
+    assert result.is_error
+    assert "exec failed" in result.content[0].text
+
+
+@pytest.mark.anyio
 async def test_version_and_curated_system_info(server, docker_client):
     async with Client(server, raise_exceptions=True) as client:
         version = await client.call_tool("docker_version", {})
@@ -949,7 +1080,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 42
+        assert len(tools.tools) == 43
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "docker_buildx_list"
         )
@@ -979,6 +1110,12 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
             assert prune_tool.annotations.destructive_hint
             assert not prune_tool.annotations.read_only_hint
             assert prune_tool.annotations.open_world_hint is False
+        exec_tool = next(
+            tool for tool in tools.tools if tool.name == "docker_container_exec"
+        )
+        assert not exec_tool.annotations.read_only_hint
+        assert exec_tool.annotations.destructive_hint is False
+        assert exec_tool.annotations.open_world_hint is False
         for name in ("docker_version", "docker_system_info", "docker_status"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
@@ -1300,7 +1437,7 @@ async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
-    assert len(tools.tools) == 42
+    assert len(tools.tools) == 43
     assert "docker_list_containers" in {tool.name for tool in tools.tools}
     assert "docker_container_stats" in {tool.name for tool in tools.tools}
 
@@ -1336,6 +1473,7 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
         "docker_volume_prune",
         "docker_system_prune",
         "docker_buildx_prune",
+        "docker_container_exec",
     }.isdisjoint(names)
     assert {template.uri_template for template in templates.resource_templates} == {
         "docker://containers/{container_id}/logs",
@@ -1371,7 +1509,8 @@ async def test_production_stdio_disable_destructive_exposes_only_safe_tools():
             "docker_remove_container", {"container_id": "x"}
         )
     names = {tool.name for tool in tools.tools}
-    assert len(names) == 32
+    assert len(names) == 33
+    assert "docker_container_exec" in names
     assert {
         "docker_remove_container",
         "docker_remove_image",
