@@ -367,6 +367,7 @@ secrets baked into the image.
 
 ### Buildx
 
+- `docker_buildx_build`
 - `docker_buildx_list`
 - `docker_buildx_du`
 - `docker_buildx_inspect`
@@ -386,6 +387,17 @@ crash a tool on Windows.
 `docker_buildx_logs` accepts `progress="plain"` and `progress="rawjson"`. The
 `tty` mode needs a terminal, which a stdio MCP server never has, so the tool
 rejects it with an explanatory error instead of calling the CLI.
+
+`docker_buildx_build` starts a Buildx build and returns the build reference
+from `buildx.build.ref` plus the bounded output tail. Pass that `ref` unchanged
+to `docker_buildx_logs` to inspect the build. `context` is a path or URL;
+`tags`, `build_args`, `target`, `builder`, `cache_from`, `cache_to` and
+`platform` map to the corresponding CLI flags, and `no_cache` disables the
+cache. `push` and `load` are mutually exclusive; `push` requires at least one
+tag and is never implied by `load`. Builds are bounded by `timeout_seconds`
+(default 600, clamped to 1-3600); a timeout or non-zero exit raises an error
+that includes the last 20 KiB of output. It is destructive (expensive), so it
+is absent under `--disable-destructive` and `--read-only`.
 
 `docker_buildx_prune` prunes the requested builder or every builder returned by
 `docker buildx ls`, always with `--force`. It reports the reclaimed space and
@@ -500,18 +512,18 @@ Three modes decide which tools are registered. A filtered tool is absent from
 
 | Mode | Flag / env | Tools |
 | --- | --- | --- |
-| Default | – | 43 |
+| Default | – | 44 |
 | No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 33 |
 | Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 23 |
 
-- **No destructive** removes the ten tools annotated with
+- **No destructive** removes the eleven tools annotated with
   `destructiveHint=true` (`docker_remove_container`, `docker_remove_image`,
   `docker_remove_network`, `docker_remove_volume`,
   `docker_recreate_container`, `docker_container_prune`,
   `docker_image_prune`, `docker_volume_prune`, `docker_system_prune`,
-  `docker_buildx_prune`). Creating, pulling, starting and stopping containers
-  still works, as does `docker_container_exec` (annotated non-destructive).
-  `--no-destructive` and
+  `docker_buildx_prune`, `docker_buildx_build`). Creating, pulling, starting
+  and stopping containers still works, as does `docker_container_exec`
+  (annotated non-destructive). `--no-destructive` and
   `MCP_SERVER_DOCKER_NO_DESTRUCTIVE` are accepted as synonyms.
 - **Read-only** exposes only tools annotated with `readOnlyHint=true`: all
   `docker_list_*`, log, stats, inspect, `docker_container_health`,
