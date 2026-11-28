@@ -13,6 +13,13 @@ Notable changes in this fork. Older releases are documented on
   (`timeout_seconds`, default 30); a timeout is an error and the process may
   keep running. Non-zero exit codes are returned as data. Write tool, so it is
   absent under `--read-only` and stays available under `--disable-destructive`.
+- `docker_buildx_build` closes the Buildx loop: it starts builds with tags,
+  target, build args, cache import/export, platform and optional `no_cache`,
+  and returns the `buildx.build.ref` so `docker_buildx_logs` can follow it.
+  `push` and `load` are mutually exclusive and `push` needs a tag. Builds are
+  bounded by `timeout_seconds` (default 600, 1-3600); failures and timeouts
+  include the last 20 KiB of output. Destructive, so it is absent under
+  `--read-only` and `--disable-destructive`.
 - Prune tools to reclaim disk space without leaving the agent session:
   `docker_system_prune` (stopped containers, unused networks, unused images
   and build cache, with opt-in anonymous volumes), `docker_container_prune`,

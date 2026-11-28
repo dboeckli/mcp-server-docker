@@ -1,10 +1,12 @@
 """MCPServer v2 implementation for Docker."""
 
 import json
+import os
 import queue
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
@@ -183,6 +185,18 @@ def _run_result(value: Any, *, detach: bool) -> dict[str, Any]:
 MAX_LOG_TEXT_BYTES = 20 * 1024
 
 
+def _bounded_text_result(output: str) -> dict[str, Any]:
+    """Return a bounded text suffix with the original byte count."""
+    raw = output.encode(_CLI_ENCODING, errors="replace")
+    total = len(raw)
+    selected = raw[-MAX_LOG_TEXT_BYTES:] if total > MAX_LOG_TEXT_BYTES else raw
+    return {
+        "output": _decode_cli_output(selected),
+        "truncated": total > MAX_LOG_TEXT_BYTES,
+        "bytes": total,
+    }
+
+
 def _bounded_log_output(raw: bytes) -> dict[str, Any]:
     """Return a bounded text suffix with original size and truncation evidence."""
     total = len(raw)
@@ -215,6 +229,32 @@ def _run_docker(
         detail = result.stderr if result.stderr is not None else result.stdout
         raise RuntimeError(detail.strip() or f"docker {' '.join(args)} failed")
     return result.stdout
+
+
+def _run_docker_captured(
+    *args: str, timeout: float | None = None
+) -> tuple[int | None, str, bool]:
+    """Run the docker CLI and return exit code, combined output and timeout flag."""
+    executable = shutil.which("docker")
+    if executable is None:
+        raise RuntimeError("docker CLI not found on PATH")
+    try:
+        result = subprocess.run(
+            [executable, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding=_CLI_ENCODING,
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        if isinstance(output, bytes):
+            output = _decode_cli_output(output)
+        return None, output, True
+    return result.returncode, result.stdout, False
 
 
 def _parse_json_stream(output: str) -> list[dict[str, Any]]:
@@ -1378,6 +1418,107 @@ def docker_buildx_logs(
         args += ["--builder", builder]
     args += ["--progress", progress]
     return _run_docker(*args, combine_stderr=True)
+
+
+_BUILDX_BUILD_TIMEOUT_LIMITS = (1, 3600)
+
+
+def _read_build_ref(path: str) -> str | None:
+    """Read the Buildx build reference from a --metadata-file payload."""
+    try:
+        with open(path, encoding=_CLI_ENCODING) as handle:
+            metadata = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    ref = metadata.get("buildx.build.ref")
+    return ref if isinstance(ref, str) and ref else None
+
+
+def _build_output_tail(output: str) -> str:
+    """Format the bounded output tail appended to build failures."""
+    tail = _bounded_text_result(output)["output"].strip()
+    return tail or "<no output>"
+
+
+@tool(
+    description="Build an image with Docker Buildx",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_buildx_build(
+    context: Annotated[str, Field(description="Build context path or URL")],
+    dockerfile: Annotated[
+        str | None, Field(description="Path to the Dockerfile")
+    ] = None,
+    tags: Annotated[list[str] | None, Field(description="Image tags")] = None,
+    target: Annotated[str | None, Field(description="Target build stage")] = None,
+    build_args: Annotated[
+        dict[str, str] | None, Field(description="Build arguments")
+    ] = None,
+    builder: Annotated[str | None, Field(description="Builder instance to use")] = None,
+    push: Annotated[bool, Field(description="Push the result to the registry")] = False,
+    load: Annotated[
+        bool, Field(description="Load the result into the local image store")
+    ] = False,
+    cache_from: Annotated[
+        list[str] | None, Field(description="External cache sources")
+    ] = None,
+    cache_to: Annotated[
+        list[str] | None, Field(description="Cache export destinations")
+    ] = None,
+    platform: Annotated[list[str] | None, Field(description="Target platforms")] = None,
+    no_cache: Annotated[bool, Field(description="Do not use cache")] = False,
+    timeout_seconds: Annotated[
+        int, Field(description="Maximum build time in seconds (1-3600)")
+    ] = 600,
+) -> dict[str, Any]:
+    if push and load:
+        raise RuntimeError("push and load are mutually exclusive")
+    if push and not tags:
+        raise RuntimeError("push requires at least one tag")
+    args = ["buildx", "build", "--progress", "plain"]
+    if dockerfile is not None:
+        args += ["--file", dockerfile]
+    for tag in tags or []:
+        args += ["--tag", tag]
+    if target is not None:
+        args += ["--target", target]
+    for key, value in (build_args or {}).items():
+        args += ["--build-arg", f"{key}={value}"]
+    if builder is not None:
+        args += ["--builder", builder]
+    if push:
+        args.append("--push")
+    if load:
+        args.append("--load")
+    for source in cache_from or []:
+        args += ["--cache-from", source]
+    for destination in cache_to or []:
+        args += ["--cache-to", destination]
+    for value in platform or []:
+        args += ["--platform", value]
+    if no_cache:
+        args.append("--no-cache")
+    timeout = _clamp(timeout_seconds, _BUILDX_BUILD_TIMEOUT_LIMITS)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        metadata_path = os.path.join(tmpdir, "metadata.json")
+        args += ["--metadata-file", metadata_path, context]
+        exit_code, output, timed_out = _run_docker_captured(*args, timeout=timeout)
+        ref = None if timed_out else _read_build_ref(metadata_path)
+    if timed_out:
+        raise ToolRuntimeError(
+            f"buildx build timed out after {timeout}s\n{_build_output_tail(output)}"
+        )
+    if exit_code != 0:
+        raise ToolRuntimeError(
+            f"buildx build exited with code {exit_code}\n{_build_output_tail(output)}"
+        )
+    if ref is None:
+        raise ToolRuntimeError(
+            "buildx build finished but did not report a build reference"
+        )
+    return {"ref": ref, **_bounded_text_result(output)}
 
 
 _BUILDX_PRUNE_TOTAL = re.compile(r"^Total:[ \t]*(?P<size>\S+)[ \t]*$", re.MULTILINE)

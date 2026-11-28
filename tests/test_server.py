@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -247,7 +248,7 @@ class FakeProcess:
 
 @pytest.fixture
 def docker_cli(monkeypatch):
-    cli = SimpleNamespace(calls=[], kwargs=[], responses=[])
+    cli = SimpleNamespace(calls=[], kwargs=[], responses=[], metadata=None)
 
     def fake_run(command, **kwargs):
         if kwargs.get("capture_output") and ("stdout" in kwargs or "stderr" in kwargs):
@@ -257,6 +258,11 @@ def docker_cli(monkeypatch):
         cli.calls.append(command)
         cli.kwargs.append(kwargs)
         process = cli.responses.pop(0)
+        if isinstance(process, BaseException):
+            raise process
+        if cli.metadata is not None and "--metadata-file" in command:
+            path = command[command.index("--metadata-file") + 1]
+            Path(path).write_text(json.dumps(cli.metadata), encoding="utf-8")
         if kwargs.get("stderr") is subprocess.STDOUT:
             return FakeProcess(
                 stdout=process.stdout + (process.stderr or ""),
@@ -780,6 +786,192 @@ async def test_buildx_prune_keeps_other_builders_when_one_fails(server, docker_c
 
 
 @pytest.mark.anyio
+async def test_buildx_build_passes_flags_and_returns_build_ref(server, docker_cli):
+    docker_cli.metadata = {"buildx.build.ref": "sbx/sbx0/build-1"}
+    docker_cli.responses.append(FakeProcess(stdout="step 1\nstep 2\n"))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_buildx_build",
+            {
+                "context": ".",
+                "dockerfile": "Dockerfile",
+                "tags": ["app:1", "app:latest"],
+                "target": "prod",
+                "build_args": {"A": "B"},
+                "builder": "sbx",
+                "cache_from": ["type=local,src=/tmp/c"],
+                "cache_to": ["type=local,dest=/tmp/c2"],
+                "platform": ["linux/amd64"],
+                "no_cache": True,
+                "timeout_seconds": 5,
+            },
+        )
+    assert not result.is_error
+    assert result.structured_content == {
+        "ref": "sbx/sbx0/build-1",
+        "output": "step 1\nstep 2\n",
+        "truncated": False,
+        "bytes": 14,
+    }
+    command = docker_cli.calls[-1][1:]
+    metadata_index = command.index("--metadata-file")
+    assert command[:metadata_index] == [
+        "buildx",
+        "build",
+        "--progress",
+        "plain",
+        "--file",
+        "Dockerfile",
+        "--tag",
+        "app:1",
+        "--tag",
+        "app:latest",
+        "--target",
+        "prod",
+        "--build-arg",
+        "A=B",
+        "--builder",
+        "sbx",
+        "--cache-from",
+        "type=local,src=/tmp/c",
+        "--cache-to",
+        "type=local,dest=/tmp/c2",
+        "--platform",
+        "linux/amd64",
+        "--no-cache",
+    ]
+    assert command[metadata_index + 1].endswith("metadata.json")
+    assert command[-1] == "."
+    assert docker_cli.kwargs[-1]["timeout"] == 5
+
+
+@pytest.mark.anyio
+async def test_buildx_build_returns_log_tail_on_failure(server, docker_cli):
+    docker_cli.responses.append(
+        FakeProcess(stdout="", stderr="ERROR: failed to solve\nstep 1\n", returncode=1)
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_buildx_build", {"context": "."})
+    assert result.is_error
+    message = result.content[0].text
+    assert "exited with code 1" in message
+    assert "ERROR: failed to solve" in message
+    assert "step 1" in message
+
+
+@pytest.mark.anyio
+async def test_buildx_build_reports_timeout_with_log_tail(server, docker_cli):
+    docker_cli.responses.append(
+        subprocess.TimeoutExpired(["docker"], 2, output=b"step 1\nstep 2\n")
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_buildx_build", {"context": ".", "timeout_seconds": 2}
+        )
+    assert result.is_error
+    message = result.content[0].text
+    assert "timed out after 2s" in message
+    assert "step 2" in message
+
+
+@pytest.mark.anyio
+async def test_buildx_build_rejects_push_and_load_together(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_buildx_build",
+            {"context": ".", "tags": ["app:1"], "push": True, "load": True},
+        )
+    assert result.is_error
+    assert "mutually exclusive" in result.content[0].text
+    assert docker_cli.calls == []
+
+
+@pytest.mark.anyio
+async def test_buildx_build_requires_tag_for_push(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_buildx_build", {"context": ".", "push": True}
+        )
+    assert result.is_error
+    assert "requires at least one tag" in result.content[0].text
+    assert docker_cli.calls == []
+
+
+@pytest.mark.anyio
+async def test_buildx_build_push_uses_push_flag(server, docker_cli):
+    docker_cli.metadata = {"buildx.build.ref": "default/default/build-2"}
+    docker_cli.responses.append(FakeProcess(stdout="pushed\n"))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_buildx_build",
+            {"context": ".", "tags": ["registry/app:1"], "push": True},
+        )
+    assert not result.is_error
+    assert "--push" in docker_cli.calls[-1]
+    assert "--load" not in docker_cli.calls[-1]
+
+
+@pytest.mark.anyio
+async def test_buildx_build_load_uses_load_flag(server, docker_cli):
+    docker_cli.metadata = {"buildx.build.ref": "default/default/build-load"}
+    docker_cli.responses.append(FakeProcess(stdout="loaded\n"))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_buildx_build",
+            {"context": ".", "tags": ["app:local"], "load": True},
+        )
+    assert not result.is_error
+    assert "--load" in docker_cli.calls[-1]
+    assert "--push" not in docker_cli.calls[-1]
+
+
+@pytest.mark.anyio
+async def test_buildx_build_reports_missing_docker_cli(server, monkeypatch):
+    monkeypatch.setattr(server_module.shutil, "which", lambda _name: None)
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_buildx_build", {"context": "."})
+    assert result.is_error
+    assert "docker CLI not found" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_buildx_build_truncates_output(server, docker_cli):
+    docker_cli.metadata = {"buildx.build.ref": "default/default/build-3"}
+    docker_cli.responses.append(FakeProcess(stdout="a" * (20 * 1024 + 500)))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_buildx_build", {"context": "."})
+    assert result.structured_content["bytes"] == 20 * 1024 + 500
+    assert result.structured_content["truncated"] is True
+    assert len(result.structured_content["output"]) == 20 * 1024
+
+
+@pytest.mark.anyio
+async def test_buildx_build_clamps_timeout(server, docker_cli):
+    docker_cli.metadata = {"buildx.build.ref": "default/default/build-4"}
+    docker_cli.responses.append(FakeProcess(stdout="ok\n"))
+    docker_cli.responses.append(FakeProcess(stdout="ok\n"))
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool(
+            "docker_buildx_build", {"context": ".", "timeout_seconds": 9999}
+        )
+        await client.call_tool(
+            "docker_buildx_build", {"context": ".", "timeout_seconds": 0}
+        )
+    assert docker_cli.kwargs[-2]["timeout"] == 3600
+    assert docker_cli.kwargs[-1]["timeout"] == 1
+
+
+@pytest.mark.anyio
+async def test_buildx_build_reports_missing_build_ref(server, docker_cli):
+    docker_cli.metadata = {}
+    docker_cli.responses.append(FakeProcess(stdout="ok\n"))
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_buildx_build", {"context": "."})
+    assert result.is_error
+    assert "did not report a build reference" in result.content[0].text
+
+
+@pytest.mark.anyio
 async def test_image_inspect_redacts_env_and_image_history_returns_layers(
     server, docker_client
 ):
@@ -1080,7 +1272,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 43
+        assert len(tools.tools) == 44
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "docker_buildx_list"
         )
@@ -1105,6 +1297,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
             "docker_volume_prune",
             "docker_system_prune",
             "docker_buildx_prune",
+            "docker_buildx_build",
         ):
             prune_tool = next(tool for tool in tools.tools if tool.name == name)
             assert prune_tool.annotations.destructive_hint
@@ -1437,7 +1630,7 @@ async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
-    assert len(tools.tools) == 43
+    assert len(tools.tools) == 44
     assert "docker_list_containers" in {tool.name for tool in tools.tools}
     assert "docker_container_stats" in {tool.name for tool in tools.tools}
 
@@ -1473,6 +1666,7 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
         "docker_volume_prune",
         "docker_system_prune",
         "docker_buildx_prune",
+        "docker_buildx_build",
         "docker_container_exec",
     }.isdisjoint(names)
     assert {template.uri_template for template in templates.resource_templates} == {
@@ -1522,6 +1716,7 @@ async def test_production_stdio_disable_destructive_exposes_only_safe_tools():
         "docker_volume_prune",
         "docker_system_prune",
         "docker_buildx_prune",
+        "docker_buildx_build",
     }.isdisjoint(names)
     assert {"docker_create_container", "docker_stop_container"} <= names
     assert blocked.is_error
