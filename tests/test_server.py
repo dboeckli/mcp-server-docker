@@ -52,10 +52,15 @@ class Object:
 class Collection:
     def __init__(self, calls: list[tuple[str, Any]], name: str):
         self.calls, self.name = calls, name
+        self.prune_payload: dict[str, Any] = {}
 
     def list(self, **kwargs):
         self.calls.append((f"{self.name}.list", kwargs))
         return []
+
+    def prune(self, **kwargs):
+        self.calls.append((f"{self.name}.prune", kwargs))
+        return self.prune_payload
 
     def get(self, name):
         self.calls.append((f"{self.name}.get", name))
@@ -106,9 +111,14 @@ class Api:
         self.status_code = 200
         self.error: Exception | None = None
         self.timeouts: list[float | None] = []
+        self.prune_builds_payload: dict[str, Any] = {}
 
     def _url(self, path: str) -> str:
         return f"http://docker{path}"
+
+    def prune_builds(self, **params: Any) -> dict[str, Any]:
+        self.calls.append(("api.prune_builds", params))
+        return self.prune_builds_payload
 
     def get(
         self,
@@ -565,6 +575,191 @@ async def test_system_df_returns_summary_and_optional_detail(server, docker_cli)
 
 
 @pytest.mark.anyio
+async def test_container_prune_returns_deleted_and_reclaimed(server, docker_client):
+    docker_client.containers.prune_payload = {
+        "ContainersDeleted": ["c1", "c2"],
+        "SpaceReclaimed": 42,
+    }
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_container_prune", {})
+    assert result.structured_content == {
+        "deleted": ["c1", "c2"],
+        "space_reclaimed": 42,
+    }
+    assert docker_client.call("containers.prune") == {}
+
+
+@pytest.mark.anyio
+async def test_image_prune_returns_deleted_entries(server, docker_client):
+    docker_client.images.prune_payload = {
+        "ImagesDeleted": [{"Deleted": "sha256:abc"}],
+        "SpaceReclaimed": 7,
+    }
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_image_prune", {})
+    assert result.structured_content == {
+        "deleted": [{"Deleted": "sha256:abc"}],
+        "space_reclaimed": 7,
+    }
+    assert docker_client.call("images.prune") == {"filters": {"dangling": True}}
+
+
+@pytest.mark.anyio
+async def test_volume_prune_returns_deleted_volumes(server, docker_client):
+    docker_client.volumes.prune_payload = {
+        "VolumesDeleted": ["v1"],
+        "SpaceReclaimed": 3,
+    }
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_volume_prune", {})
+    assert result.structured_content == {"deleted": ["v1"], "space_reclaimed": 3}
+    assert docker_client.call("volumes.prune") == {}
+
+
+@pytest.mark.anyio
+async def test_system_prune_aggregates_without_volumes_by_default(
+    server, docker_client
+):
+    docker_client.containers.prune_payload = {
+        "ContainersDeleted": ["c1"],
+        "SpaceReclaimed": 10,
+    }
+    docker_client.networks.prune_payload = {"NetworksDeleted": ["n1"]}
+    docker_client.images.prune_payload = {
+        "ImagesDeleted": [{"Deleted": "sha256:abc"}],
+        "SpaceReclaimed": 5,
+    }
+    docker_client.api.prune_builds_payload = {
+        "CachesDeleted": ["cache1"],
+        "SpaceReclaimed": 3,
+    }
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_system_prune", {})
+    assert result.structured_content == {
+        "space_reclaimed": 18,
+        "containers": {"deleted": ["c1"], "space_reclaimed": 10},
+        "networks": {"deleted": ["n1"], "space_reclaimed": 0},
+        "images": {"deleted": [{"Deleted": "sha256:abc"}], "space_reclaimed": 5},
+        "build_cache": {"deleted": ["cache1"], "space_reclaimed": 3},
+    }
+    assert docker_client.call("images.prune") == {"filters": {"dangling": False}}
+    assert docker_client.call("api.prune_builds") == {"all": True}
+    assert all(key != "volumes.prune" for key, _ in docker_client.calls)
+
+
+@pytest.mark.anyio
+async def test_system_prune_opt_in_volumes_and_dangling_only(server, docker_client):
+    docker_client.volumes.prune_payload = {
+        "VolumesDeleted": ["v1"],
+        "SpaceReclaimed": 2,
+    }
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_system_prune", {"all": False, "volumes": True}
+        )
+    assert result.structured_content["volumes"] == {
+        "deleted": ["v1"],
+        "space_reclaimed": 2,
+    }
+    assert result.structured_content["space_reclaimed"] == 2
+    assert docker_client.call("images.prune") == {"filters": {"dangling": True}}
+    assert docker_client.call("api.prune_builds") == {"all": False}
+
+
+@pytest.mark.anyio
+async def test_buildx_prune_reports_reclaimed_space_and_deleted_ids(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(stdout='[{"Name": "default", "Current": true}]')
+        )
+        docker_cli.responses.append(
+            FakeProcess(
+                stdout="ID              RECLAIMABLE   SIZE    LAST ACCESSED\n"
+                "abc123          true          1.2kB   2 days ago\n"
+                "Total:   1.2kB\n"
+            )
+        )
+        result = await client.call_tool("docker_buildx_prune", {})
+        assert not result.is_error
+        assert result.structured_content == {
+            "result": [
+                {
+                    "builder": "default",
+                    "current": True,
+                    "reclaimed": "1.2kB",
+                    "deleted": ["abc123"],
+                }
+            ]
+        }
+        assert docker_cli.calls[0][1:] == ["buildx", "ls", "--format", "json"]
+        assert docker_cli.calls[1][1:] == [
+            "buildx",
+            "prune",
+            "--builder",
+            "default",
+            "--force",
+            "--all",
+        ]
+
+
+@pytest.mark.anyio
+async def test_buildx_prune_supports_single_builder_without_all(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(FakeProcess(stdout="Total:   0B\n"))
+        result = await client.call_tool(
+            "docker_buildx_prune", {"builder": "sbx", "all": False}
+        )
+        assert result.structured_content == {
+            "result": [
+                {
+                    "builder": "sbx",
+                    "current": None,
+                    "reclaimed": "0B",
+                    "deleted": [],
+                }
+            ]
+        }
+        assert docker_cli.calls[0][1:] == [
+            "buildx",
+            "prune",
+            "--builder",
+            "sbx",
+            "--force",
+        ]
+
+
+@pytest.mark.anyio
+async def test_buildx_prune_keeps_other_builders_when_one_fails(server, docker_cli):
+    async with Client(server, raise_exceptions=True) as client:
+        docker_cli.responses.append(
+            FakeProcess(stdout='[{"Name": "broken"}, {"Name": "ok"}]')
+        )
+        docker_cli.responses.append(
+            FakeProcess(stdout="", stderr="builder not found\n", returncode=1)
+        )
+        docker_cli.responses.append(
+            FakeProcess(
+                stdout="ID       RECLAIMABLE   SIZE   LAST ACCESSED\n"
+                "deadbeef true          2kB    1 day ago\n"
+                "Total:   2kB\n"
+            )
+        )
+        result = await client.call_tool("docker_buildx_prune", {})
+        assert not result.is_error
+        assert result.structured_content == {
+            "result": [
+                {"builder": "broken", "current": None, "error": "builder not found"},
+                {
+                    "builder": "ok",
+                    "current": None,
+                    "reclaimed": "2kB",
+                    "deleted": ["deadbeef"],
+                },
+            ]
+        }
+
+
+@pytest.mark.anyio
 async def test_image_inspect_redacts_env_and_image_history_returns_layers(
     server, docker_client
 ):
@@ -754,7 +949,7 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
 ):
     async with Client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
-        assert len(tools.tools) == 37
+        assert len(tools.tools) == 42
         buildx_list_tool = next(
             tool for tool in tools.tools if tool.name == "docker_buildx_list"
         )
@@ -773,6 +968,17 @@ async def test_tools_have_flat_schemas_and_container_call_semantics(
         assert system_df_tool.annotations.read_only_hint
         assert system_df_tool.annotations.idempotent_hint
         assert system_df_tool.annotations.open_world_hint is False
+        for name in (
+            "docker_container_prune",
+            "docker_image_prune",
+            "docker_volume_prune",
+            "docker_system_prune",
+            "docker_buildx_prune",
+        ):
+            prune_tool = next(tool for tool in tools.tools if tool.name == name)
+            assert prune_tool.annotations.destructive_hint
+            assert not prune_tool.annotations.read_only_hint
+            assert prune_tool.annotations.open_world_hint is False
         for name in ("docker_version", "docker_system_info", "docker_status"):
             tool = next(tool for tool in tools.tools if tool.name == name)
             assert tool.annotations.read_only_hint
@@ -1094,7 +1300,7 @@ async def test_production_stdio_command_lists_all_tools():
     params = StdioServerParameters(command="uv", args=["run", "mcp-server-docker"])
     async with Client(stdio_client(params), raise_exceptions=True) as client:
         tools = await client.list_tools()
-    assert len(tools.tools) == 37
+    assert len(tools.tools) == 42
     assert "docker_list_containers" in {tool.name for tool in tools.tools}
     assert "docker_container_stats" in {tool.name for tool in tools.tools}
 
@@ -1124,6 +1330,13 @@ async def test_production_stdio_read_only_env_exposes_only_read_only_tools():
     } <= names
     assert "docker_buildx_du" in names
     assert "docker_container_stats" in names
+    assert {
+        "docker_container_prune",
+        "docker_image_prune",
+        "docker_volume_prune",
+        "docker_system_prune",
+        "docker_buildx_prune",
+    }.isdisjoint(names)
     assert {template.uri_template for template in templates.resource_templates} == {
         "docker://containers/{container_id}/logs",
         "docker://containers/{container_id}/stats",
@@ -1165,6 +1378,11 @@ async def test_production_stdio_disable_destructive_exposes_only_safe_tools():
         "docker_remove_network",
         "docker_remove_volume",
         "docker_recreate_container",
+        "docker_container_prune",
+        "docker_image_prune",
+        "docker_volume_prune",
+        "docker_system_prune",
+        "docker_buildx_prune",
     }.isdisjoint(names)
     assert {"docker_create_container", "docker_stop_container"} <= names
     assert blocked.is_error

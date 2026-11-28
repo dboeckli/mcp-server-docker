@@ -3,6 +3,19 @@
 Notable changes in this fork. Older releases are documented on
 [GitHub Releases](https://github.com/dboeckli/mcp-server-docker/releases).
 
+## [Unreleased]
+
+### Added
+
+- Prune tools to reclaim disk space without leaving the agent session:
+  `docker_system_prune` (stopped containers, unused networks, unused images
+  and build cache, with opt-in anonymous volumes), `docker_container_prune`,
+  `docker_image_prune`, `docker_volume_prune` and `docker_buildx_prune`. The
+  SDK-backed tools return `deleted` and `space_reclaimed`; the Buildx tool
+  reports per builder and keeps going when one builder fails. All five are
+  annotated `destructiveHint=true`, so they are absent under
+  `--disable-destructive` and `--read-only`.
+
 ## [0.13.0] - 2026-11-27
 
 ### Added
