@@ -292,6 +292,7 @@ Read either URI with a Docker container ID or name.
 - `docker_container_health`
 - `docker_container_processes`
 - `docker_container_stats`
+- `docker_container_exec`
 - `docker_container_prune`
 
 `docker_container_inspect` redacts environment values like
@@ -305,6 +306,16 @@ fresh response, so no environment value is included.
 snapshot (`stream=false`), so it never blocks a tool call; the
 `docker://containers/{container_id}/stats`
 resource stays available for clients that read resources.
+
+`docker_container_exec` runs an argv command in a running container and returns
+`exit_code`, `output`, `truncated` and `bytes`. `command` is a JSON array, so
+there is no shell interpolation; `workdir` and `env` map to the exec API and no
+TTY is allocated. Output is capped at the last 20 KiB, `timeout_seconds`
+defaults to 30 (clamped to 1-300) and a timeout is reported as an error; the
+process may keep running in the container. A non-zero exit code is returned as
+data, not as a tool error. This is a write tool: it is absent under
+`--read-only`, stays available under `--disable-destructive`, and is
+host-root-equivalent like the other write tools.
 
 `docker_run_container` with `detach=false` returns `mode: "attached"`, the
 decoded `output`, the original byte count (`bytes`) and a `truncated` flag.
@@ -489,8 +500,8 @@ Three modes decide which tools are registered. A filtered tool is absent from
 
 | Mode | Flag / env | Tools |
 | --- | --- | --- |
-| Default | – | 42 |
-| No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 32 |
+| Default | – | 43 |
+| No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 33 |
 | Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 23 |
 
 - **No destructive** removes the ten tools annotated with
@@ -498,8 +509,9 @@ Three modes decide which tools are registered. A filtered tool is absent from
   `docker_remove_network`, `docker_remove_volume`,
   `docker_recreate_container`, `docker_container_prune`,
   `docker_image_prune`, `docker_volume_prune`, `docker_system_prune`,
-  `docker_buildx_prune`). Creating, pulling, starting and stopping
-  containers still works. `--no-destructive` and
+  `docker_buildx_prune`). Creating, pulling, starting and stopping containers
+  still works, as does `docker_container_exec` (annotated non-destructive).
+  `--no-destructive` and
   `MCP_SERVER_DOCKER_NO_DESTRUCTIVE` are accepted as synonyms.
 - **Read-only** exposes only tools annotated with `readOnlyHint=true`: all
   `docker_list_*`, log, stats, inspect, `docker_container_health`,
