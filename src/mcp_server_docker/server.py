@@ -1426,7 +1426,7 @@ def docker_build_image(
         snapshot = buffer.snapshot()
         return (
             list(logs),
-            chunks > len(logs) or snapshot["truncated"],
+            chunks > _BUILD_LOG_RECORDS or snapshot["truncated"],
             snapshot["bytes"],
         )
 
