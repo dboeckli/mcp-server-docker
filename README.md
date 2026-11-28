@@ -292,6 +292,7 @@ Read either URI with a Docker container ID or name.
 - `docker_container_health`
 - `docker_container_processes`
 - `docker_container_stats`
+- `docker_container_prune`
 
 `docker_container_inspect` redacts environment values like
 `docker_image_inspect`. `docker_container_health` returns a compact summary
@@ -347,6 +348,7 @@ from unfiltered listings but reveals them for a `label` filter, so
 - `docker_remove_image`
 - `docker_image_inspect`
 - `docker_image_history`
+- `docker_image_prune`
 
 `docker_image_inspect` replaces environment values with `<redacted>`.
 `docker_image_history` is not redacted: layer `CreatedBy` commands can contain
@@ -359,6 +361,7 @@ secrets baked into the image.
 - `docker_buildx_inspect`
 - `docker_buildx_history`
 - `docker_buildx_logs`
+- `docker_buildx_prune`
 
 These tools invoke the `docker` CLI, so the `docker` binary (with the Buildx
 plugin) must be available on `PATH`. The container image built from this
@@ -373,9 +376,17 @@ crash a tool on Windows.
 `tty` mode needs a terminal, which a stdio MCP server never has, so the tool
 rejects it with an explanatory error instead of calling the CLI.
 
+`docker_buildx_prune` prunes the requested builder or every builder returned by
+`docker buildx ls`, always with `--force`. It reports the reclaimed space and
+the deleted cache record IDs per builder and adds `--all` unless disabled. A
+failing builder yields an `error` entry while the remaining builders are still
+pruned. It is destructive, so it is absent under `--disable-destructive` and
+`--read-only`.
+
 ### System
 
 - `docker_system_df`
+- `docker_system_prune`
 - `docker_version`
 - `docker_system_info`
 - `docker_status`
@@ -393,6 +404,16 @@ read-only mode.
 `docker_system_df` uses the `docker` CLI and reports the same summary as
 `docker system df`, including reclaimable space. Pass `verbose=true` for the
 per-image, per-container, per-volume, and build-cache detail.
+
+`docker_system_prune` reclaims stopped containers, unused networks, unused
+images and build cache in one call and reports `space_reclaimed` plus the
+deleted IDs per category. `all` defaults to `true` (unused images, not just
+dangling ones); `volumes` defaults to `false`, so anonymous volumes are only
+pruned when explicitly requested. `docker_container_prune`,
+`docker_image_prune` and `docker_volume_prune` expose the individual
+operations. All four use the Docker SDK and return `deleted` and
+`space_reclaimed`. They are destructive, so they are absent under
+`--disable-destructive` and `--read-only`.
 
 `docker_system_df` and `docker_system_info` take their numbers straight from
 the engine, while `docker_list_containers` mirrors `docker ps`. Some engines
@@ -441,6 +462,7 @@ IPAM configuration and connected containers.
 - `docker_volume_inspect`
 - `docker_create_volume`
 - `docker_remove_volume`
+- `docker_volume_prune`
 
 `docker_volume_inspect` returns the full volume attributes, including driver,
 mountpoint, labels and options.
@@ -467,14 +489,16 @@ Three modes decide which tools are registered. A filtered tool is absent from
 
 | Mode | Flag / env | Tools |
 | --- | --- | --- |
-| Default | – | 37 |
+| Default | – | 42 |
 | No destructive | `--disable-destructive` / `MCP_SERVER_DOCKER_DISABLE_DESTRUCTIVE=1` | 32 |
 | Read-only | `--read-only` / `MCP_SERVER_DOCKER_READ_ONLY=1` | 23 |
 
-- **No destructive** removes the five tools annotated with
+- **No destructive** removes the ten tools annotated with
   `destructiveHint=true` (`docker_remove_container`, `docker_remove_image`,
   `docker_remove_network`, `docker_remove_volume`,
-  `docker_recreate_container`). Creating, pulling, starting and stopping
+  `docker_recreate_container`, `docker_container_prune`,
+  `docker_image_prune`, `docker_volume_prune`, `docker_system_prune`,
+  `docker_buildx_prune`). Creating, pulling, starting and stopping
   containers still works. `--no-destructive` and
   `MCP_SERVER_DOCKER_NO_DESTRUCTIVE` are accepted as synonyms.
 - **Read-only** exposes only tools annotated with `readOnlyHint=true`: all

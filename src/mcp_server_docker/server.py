@@ -1,6 +1,7 @@
 """MCPServer v2 implementation for Docker."""
 
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -1192,6 +1193,13 @@ def docker_buildx_list() -> list[dict[str, Any]]:
     return _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
 
 
+def _resolve_builders(builder: str | None) -> list[dict[str, Any]]:
+    """Return the requested builder or every builder known to Buildx."""
+    if builder is not None:
+        return [{"Name": builder, "Current": None}]
+    return _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
+
+
 @tool(
     description="Show Docker Buildx cache usage per builder",
     annotations=ToolAnnotations(
@@ -1206,11 +1214,7 @@ def docker_buildx_du(
         bool, Field(description="Include individual cache records")
     ] = False,
 ) -> list[dict[str, Any]]:
-    builders = (
-        [{"Name": builder, "Current": None}]
-        if builder is not None
-        else _parse_json_stream(_run_docker("buildx", "ls", "--format", "json"))
-    )
+    builders = _resolve_builders(builder)
     results: list[dict[str, Any]] = []
     for entry in builders:
         name = entry.get("Name") or entry.get("name")
@@ -1292,6 +1296,49 @@ def docker_buildx_logs(
     return _run_docker(*args, combine_stderr=True)
 
 
+_BUILDX_PRUNE_TOTAL = re.compile(r"^Total:[ \t]*(?P<size>\S+)[ \t]*$", re.MULTILINE)
+_BUILDX_PRUNE_ROW = re.compile(r"^(?P<id>\S+)[ \t]+(?:true|false)[ \t]", re.MULTILINE)
+
+
+def _parse_buildx_prune(output: str) -> dict[str, Any]:
+    """Extract reclaimed space and cache record IDs from Buildx prune output."""
+    total = _BUILDX_PRUNE_TOTAL.search(output)
+    return {
+        "reclaimed": total.group("size") if total else None,
+        "deleted": _BUILDX_PRUNE_ROW.findall(output),
+    }
+
+
+@tool(
+    description="Prune the Docker Buildx build cache",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_buildx_prune(
+    builder: Annotated[
+        str | None, Field(description="Builder instance to prune")
+    ] = None,
+    all: Annotated[bool, Field(description="Include internal/frontend images")] = True,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for entry in _resolve_builders(builder):
+        name = entry.get("Name") or entry.get("name")
+        result: dict[str, Any] = {
+            "builder": name,
+            "current": entry.get("Current", entry.get("current")),
+        }
+        args = ["buildx", "prune", "--builder", name, "--force"]
+        if all:
+            args.append("--all")
+        try:
+            result.update(_parse_buildx_prune(_run_docker(*args, combine_stderr=True)))
+        except RuntimeError as exc:
+            result["error"] = str(exc)
+        results.append(result)
+    return results
+
+
 @tool(
     description="Show Docker disk usage, including reclaimable space",
     annotations=ToolAnnotations(
@@ -1310,6 +1357,80 @@ def docker_system_df(
         detail = _run_docker("system", "df", "-v", "--format", "json")
         result["detail"] = json.loads(detail) if detail.strip() else {}
     return result
+
+
+def _prune_result(payload: Mapping[str, Any], deleted_key: str) -> dict[str, Any]:
+    """Normalize a Docker prune response to deleted objects and reclaimed bytes."""
+    return {
+        "deleted": payload.get(deleted_key) or [],
+        "space_reclaimed": payload.get("SpaceReclaimed", 0),
+    }
+
+
+@tool(
+    description="Prune stopped Docker containers",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_container_prune(ctx: Context[AppContext]) -> dict[str, Any]:
+    payload = _client(ctx).containers.prune()
+    return _prune_result(payload, "ContainersDeleted")
+
+
+@tool(
+    description="Prune unused Docker images",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_image_prune(ctx: Context[AppContext]) -> dict[str, Any]:
+    payload = _client(ctx).images.prune(filters={"dangling": True})
+    return _prune_result(payload, "ImagesDeleted")
+
+
+@tool(
+    description="Prune unused Docker volumes",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_volume_prune(ctx: Context[AppContext]) -> dict[str, Any]:
+    payload = _client(ctx).volumes.prune()
+    return _prune_result(payload, "VolumesDeleted")
+
+
+@tool(
+    description="Prune unused Docker containers, networks, images and build cache",
+    annotations=ToolAnnotations(
+        destructive_hint=True, idempotent_hint=False, open_world_hint=False
+    ),
+)
+def docker_system_prune(
+    ctx: Context[AppContext],
+    all: Annotated[
+        bool,
+        Field(
+            description=(
+                "Remove all unused images and build cache, not just dangling ones"
+            )
+        ),
+    ] = True,
+    volumes: Annotated[bool, Field(description="Also prune anonymous volumes")] = False,
+) -> dict[str, Any]:
+    client = _client(ctx)
+    parts = {
+        "containers": _prune_result(client.containers.prune(), "ContainersDeleted"),
+        "networks": _prune_result(client.networks.prune(), "NetworksDeleted"),
+        "images": _prune_result(
+            client.images.prune(filters={"dangling": not all}), "ImagesDeleted"
+        ),
+        "build_cache": _prune_result(client.api.prune_builds(all=all), "CachesDeleted"),
+    }
+    if volumes:
+        parts["volumes"] = _prune_result(client.volumes.prune(), "VolumesDeleted")
+    total = sum(part["space_reclaimed"] for part in parts.values())
+    return {"space_reclaimed": total, **parts}
 
 
 _EVENTS_WINDOW_LIMITS = (1, 86400)

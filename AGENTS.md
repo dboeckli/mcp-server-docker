@@ -70,7 +70,7 @@ uv build
 - `tests/test_output_schemas.py` exercises the real serializers with real docker
   models; `tests/test_recreate.py` uses `Mock(spec=Container)`.
 - `tests/test_settings.py` covers the safety-mode gating.
-- Tool counts are asserted in tests (37 total, 23 read-only, 32 without
+- Tool counts are asserted in tests (42 total, 23 read-only, 32 without
   destructive tools). Update them when adding/removing tools; also update
   `README.md` tool docs.
 - The `production_stdio` tests spawn `uv run mcp-server-docker`; they need a
