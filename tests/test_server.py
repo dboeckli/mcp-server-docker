@@ -117,6 +117,10 @@ class Api:
         self.exec_output: list[bytes] = []
         self.exec_exit_code: int | None = 0
         self.exec_stream: Any = None
+        self.build_chunks: list[dict[str, Any]] = []
+        self.build_stream: Any = None
+        self.pull_chunks: list[dict[str, Any]] = []
+        self.pull_stream: Any = None
 
     def _url(self, path: str) -> str:
         return f"http://docker{path}"
@@ -140,6 +144,20 @@ class Api:
     def exec_inspect(self, exec_id: str) -> dict[str, Any]:
         self.calls.append(("api.exec_inspect", exec_id))
         return {"ExitCode": self.exec_exit_code}
+
+    def build(self, **kwargs: Any) -> Any:
+        self.calls.append(("api.build", kwargs))
+        return (
+            self.build_stream
+            if self.build_stream is not None
+            else iter(self.build_chunks)
+        )
+
+    def pull(self, repository: str, **kwargs: Any) -> Any:
+        self.calls.append(("api.pull", (repository, kwargs)))
+        return (
+            self.pull_stream if self.pull_stream is not None else iter(self.pull_chunks)
+        )
 
     def get(
         self,
@@ -274,6 +292,12 @@ def docker_cli(monkeypatch):
     monkeypatch.setattr(server_module.subprocess, "run", fake_run)
     monkeypatch.setattr(server_module.shutil, "which", lambda _name: "/usr/bin/docker")
     return cli
+
+
+def test_tail_buffer_ignores_empty_text():
+    buffer = server_module._TailBuffer()
+    buffer.add("")
+    assert buffer.snapshot() == {"output": "", "truncated": False, "bytes": 0}
 
 
 def test_run_docker_decodes_utf8_and_replaces_undecodable_bytes(monkeypatch):
@@ -1485,23 +1509,42 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
             "all": True,
             "filters": {"dangling": True},
         }
-        await client.call_tool(
+        docker_client.api.pull_chunks = [
+            {"status": "Pulling from library/alpine", "id": "latest"}
+        ]
+        pull = await client.call_tool(
             "docker_pull_image", {"repository": "alpine", "tag": "3.20"}
         )
-        assert docker_client.call("images.pull") == ("alpine", {"tag": "3.20"})
+        assert pull.structured_content["progress"]["output"] == (
+            "Pulling from library/alpine latest\n"
+        )
+        assert docker_client.call("api.pull") == (
+            "alpine",
+            {"tag": "3.20", "stream": True, "decode": True},
+        )
+        assert docker_client.call("images.get") == "alpine:3.20"
         await client.call_tool("docker_push_image", {"repository": "alpine"})
         assert docker_client.call("images.push") == ("alpine", {"tag": "latest"})
+        docker_client.api.build_chunks = [{"stream": "built\n"}]
         build = await client.call_tool(
             "docker_build_image",
             {"path": ".", "tag": "test", "dockerfile": "Dockerfile.test"},
         )
-        assert build.structured_content["logs"] == [{"stream": "built"}]
-        assert docker_client.call("images.build") == {
+        assert build.structured_content["image"] == {"id": "object-id"}
+        assert build.structured_content["logs"] == [{"stream": "built\n"}]
+        assert build.structured_content["logs_truncated"] is False
+        assert build.structured_content["logs_bytes"] == 6
+        assert docker_client.call("images.get") == "test"
+        assert docker_client.call("api.build") == {
             "path": ".",
             "tag": "test",
             "dockerfile": "Dockerfile.test",
             "rm": True,
             "forcerm": True,
+            "nocache": False,
+            "platform": None,
+            "buildargs": None,
+            "decode": True,
         }
         await client.call_tool("docker_remove_image", {"image": "test", "force": True})
         assert docker_client.call("images.remove") == {"image": "test", "force": True}
@@ -1533,6 +1576,151 @@ async def test_image_network_and_volume_call_semantics(server, docker_client):
             "docker_remove_volume", {"volume_name": "v", "force": True}
         )
         assert docker_client.call("object.remove") == {"force": True}
+
+
+@pytest.mark.anyio
+async def test_pull_image_reports_stream_error_with_tail(server, docker_client):
+    docker_client.api.pull_chunks = [
+        {"status": "Pulling fs layer", "id": "abc"},
+        {"error": "manifest unknown"},
+    ]
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("docker_pull_image", {"repository": "alpine"})
+    assert result.is_error
+    message = result.content[0].text
+    assert "manifest unknown" in message
+    assert "Pulling fs layer abc" in message
+
+
+@pytest.mark.anyio
+async def test_pull_image_times_out_with_tail(server, docker_client):
+    release = threading.Event()
+
+    def stream():
+        yield {"status": "Pulling fs layer", "id": "abc"}
+        release.wait()
+
+    docker_client.api.pull_stream = stream()
+    try:
+        async with Client(server, raise_exceptions=True) as client:
+            result = await client.call_tool(
+                "docker_pull_image",
+                {"repository": "alpine", "timeout_seconds": 1},
+            )
+    finally:
+        release.set()
+    assert result.is_error
+    message = result.content[0].text
+    assert "timed out after 1s" in message
+    assert "Pulling fs layer abc" in message
+
+
+@pytest.mark.anyio
+async def test_pull_image_reports_invalid_reference(server, docker_client):
+    def fail(repository, **kwargs):
+        docker_client.calls.append(("api.pull", (repository, kwargs)))
+        raise docker.errors.APIError("invalid reference format")
+
+    docker_client.api.pull = fail
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_pull_image", {"repository": "not a valid ref"}
+        )
+    assert result.is_error
+    assert "invalid reference format" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_build_image_reports_stream_error_with_tail(server, docker_client):
+    docker_client.api.build_chunks = [
+        {"stream": "Step 1/2\n"},
+        {"error": "failed to solve"},
+    ]
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_build_image", {"path": ".", "tag": "broken"}
+        )
+    assert result.is_error
+    message = result.content[0].text
+    assert "failed to solve" in message
+    assert "Step 1/2" in message
+
+
+@pytest.mark.anyio
+async def test_build_image_reports_api_error(server, docker_client):
+    def fail(**kwargs):
+        docker_client.calls.append(("api.build", kwargs))
+        raise docker.errors.APIError("no space left on device")
+
+    docker_client.api.build = fail
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_build_image", {"path": ".", "tag": "full"}
+        )
+    assert result.is_error
+    assert "no space left on device" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_build_image_times_out_with_tail(server, docker_client):
+    release = threading.Event()
+
+    def stream():
+        yield {"stream": "Step 1/2\n"}
+        release.wait()
+
+    docker_client.api.build_stream = stream()
+    try:
+        async with Client(server, raise_exceptions=True) as client:
+            result = await client.call_tool(
+                "docker_build_image",
+                {"path": ".", "tag": "slow", "timeout_seconds": 1},
+            )
+    finally:
+        release.set()
+    assert result.is_error
+    message = result.content[0].text
+    assert "timed out after 1s" in message
+    assert "Step 1/2" in message
+
+
+@pytest.mark.anyio
+async def test_build_image_bounds_logs(server, docker_client):
+    docker_client.api.build_chunks = [{"stream": "x" * 100 + "\n"} for _ in range(300)]
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "docker_build_image", {"path": ".", "tag": "big"}
+        )
+    assert len(result.structured_content["logs"]) == 200
+    assert result.structured_content["logs_truncated"] is True
+    assert result.structured_content["logs_bytes"] == 300 * 101
+
+
+@pytest.mark.anyio
+async def test_build_image_passes_optional_flags(server, docker_client):
+    docker_client.api.build_chunks = [{"stream": "ok\n"}]
+    async with Client(server, raise_exceptions=True) as client:
+        await client.call_tool(
+            "docker_build_image",
+            {
+                "path": ".",
+                "tag": "arm",
+                "no_cache": True,
+                "platform": "linux/arm64",
+                "build_args": {"A": "B"},
+            },
+        )
+    assert docker_client.call("api.build") == {
+        "path": ".",
+        "tag": "arm",
+        "dockerfile": None,
+        "rm": True,
+        "forcerm": True,
+        "nocache": True,
+        "platform": "linux/arm64",
+        "buildargs": {"A": "B"},
+        "decode": True,
+    }
 
 
 @pytest.mark.anyio

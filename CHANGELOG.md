@@ -13,6 +13,14 @@ Notable changes in this fork. Older releases are documented on
   (`timeout_seconds`, default 30); a timeout is an error and the process may
   keep running. Non-zero exit codes are returned as data. Write tool, so it is
   absent under `--read-only` and stays available under `--disable-destructive`.
+- `docker_build_image` and `docker_pull_image` now surface bounded progress and
+  enforce total timeouts instead of blocking indefinitely. Builds keep the last
+  200 `logs` chunks (`logs_truncated`, `logs_bytes`) and default to 600 s;
+  pulls add a `progress` object (`output`, `truncated`, `bytes`) and default to
+  1800 s. Both accept `timeout_seconds` (1-3600), report failures with the last
+  20 KiB of output, and document that the daemon operation may continue after a
+  timeout. `docker_build_image` also gained `no_cache`, `platform` and
+  `build_args`.
 - `docker_buildx_build` closes the Buildx loop: it starts builds with tags,
   target, build args, cache import/export, platform and optional `no_cache`,
   and returns the `buildx.build.ref` so `docker_buildx_logs` can follow it.
